@@ -42,7 +42,7 @@ class TwoWayComChannel():
         return self.downlinkMsgs
 
 class OneDfield():
-    def __init__(self, speed=1, agent_positions = (0.2, 0.8), n_channels=2, n_discrete=100, channels_propagation_dirs = (1, -1)):
+    def __init__(self, speed=1, agent_positions = (0.2, 0.8), n_channels=2, n_discrete=25, channels_propagation_dirs = (1, -1)):
         self.fields = np.zeros((n_discrete, n_channels))
         self.n_discrete = n_discrete
         self.speed = speed
