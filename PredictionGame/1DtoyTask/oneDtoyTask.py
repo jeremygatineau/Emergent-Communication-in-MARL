@@ -46,15 +46,27 @@ class OneDfield():
         self.fields = np.zeros((n_discrete, n_channels))
         self.n_discrete = n_discrete
         self.speed = speed
-        self.t = 0
+        self.gen_fct_state = [0, 4]
+        self.onoff_dutyCyle = [(2, 20), 3]
         self.agent_positions = np.array(agent_positions)
         self.channels_propagation_dirs = channels_propagation_dirs
 
-    def _generatorFunction(self):
-        return (0.6, 0.2)
+    def _generatorFunction(self, hidden_var=None):
+        if self.gen_fct_state[0]>0 and self.gen_fct_state[1]==0:
+            self.gen_fct_state[0] -= 1
+            return (1, 1)
+        elif self.gen_fct_state[0] == 0 and self.gen_fct_state[1]==0:
+            
+            self.gen_fct_state[1] = np.random.randint(self.onoff_dutyCyle[0][0], self.onoff_dutyCyle[0][1])
+            print(self.gen_fct_state[1])
+            self.gen_fct_state[0] = self.onoff_dutyCyle[1]
+            return (0, 0)
+        elif self.gen_fct_state[1]>0:
+            self.gen_fct_state[1] -= 1
+            return (0, 0)
     
     def _propagate(self):
-        new_values = self._generatorFunction()
+        new_values = self._generatorFunction(self.t)
         for i, channel in enumerate(self.fields.T):
             channel_ = channel.copy()
             if self.channels_propagation_dirs[i] == 1:
@@ -66,7 +78,7 @@ class OneDfield():
             self.fields[:, i] = channel_
     def _propagateNSteps(self, n):
         def prop(num):
-            new_values_array = np.array([self._generatorFunction() for _ in range(num)])
+            new_values_array = np.array([self._generatorFunction() for dt in range(num)])
             for i, channel in enumerate(self.fields.T):
                 channel_ = channel.copy()
                 if self.channels_propagation_dirs[i] == 1:
@@ -85,6 +97,5 @@ class OneDfield():
     def step(self):
         agent_idxs = np.floor(self.n_discrete*self.agent_positions).astype(int)
 
-        self.t += 1
         self._propagateNSteps(self.speed)
         return self.fields[agent_idxs]
