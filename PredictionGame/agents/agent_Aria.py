@@ -7,7 +7,7 @@ class Aria(nn.Module):
     def __init__(self, batch_size):
         super(Aria).__init__()
         self.hiddenDim = 10
-        self.obs_Mod = lin_Mod([1+self.hiddenDim, 5])
+        self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
         self.action_Mod = lin_Mod([self.hiddenDim, 1], sftmx = True)
         self.msg_Enc = lin_Mod([4, 5], sftmx = False)
         self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
@@ -29,7 +29,7 @@ class Aria(nn.Module):
         return action, message
 
 class lin_Mod(nn.Module):
-    def __init__(self, sizes = [1, 5, 6, 10, 10], sftmx = False):
+    def __init__(self, sizes = [2, 5, 6, 10, 10], sftmx = False):
         super(lin_Mod).__init__()
         self.sizes = sizes
         L = []

@@ -24,7 +24,10 @@ class ToyTask():
     def reset(self):
         self.hiddenStateField.reset()
         self.comChannel.reset()
+        observations = np.apply_along_axis(self.observationMappingFct, -1, nxtObs)
+        downlinkMsgs = self.comChannel.setMessages(self.initMsgs)
 
+        return (observations, downlinkMsgs)
     def render(self):
         """
         plot obs state and a visualization of the communication channel
@@ -37,6 +40,9 @@ class ToyTask():
 class TwoWayComChannel():
     def __init__(self):
         self.downlinkMsgs = []
+    def reset(self):
+        self.downlinkMsgs = []
+        return self.downlinkMsgs
     def setMessages(self, messages):
         self.downlinkMsgs = [msg for msg in reversed(messages)]
         return self.downlinkMsgs
@@ -45,12 +51,13 @@ class OneDfield():
     def __init__(self, speed=1, agent_positions = (0.2, 0.8), n_channels=2, n_discrete=25, channels_propagation_dirs = (1, -1)):
         self.fields = np.zeros((n_discrete, n_channels))
         self.n_discrete = n_discrete
+        self.n_channels = n_channels
         self.speed = speed
         self.gen_fct_state = [0, 4]
         self.onoff_dutyCyle = [(2, 20), 3]
         self.agent_positions = np.array(agent_positions)
         self.channels_propagation_dirs = channels_propagation_dirs
-
+        self.agent_idxs = np.floor(self.n_discrete*self.agent_positions).astype(int)
     def _generatorFunction(self, hidden_var=None):
         if self.gen_fct_state[0]>0 and self.gen_fct_state[1]==0:
             self.gen_fct_state[0] -= 1
@@ -93,9 +100,10 @@ class OneDfield():
             prop(self.n_discrete-1)
             k -= self.n_discrete-1
         prop(k)
-           
+    def reset(self):
+        self.fields = np.zeros((self.n_discrete, self.n_channels))
+        self.gen_fct_state = [0, 4]
+        return self.fields[self.agent_idxs]
     def step(self):
-        agent_idxs = np.floor(self.n_discrete*self.agent_positions).astype(int)
-
         self._propagateNSteps(self.speed)
-        return self.fields[agent_idxs]
+        return self.fields[self.agent_idxs]
