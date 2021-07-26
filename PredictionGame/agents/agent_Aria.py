@@ -5,7 +5,7 @@ import numpy as np
 from torch.distributions import Categorical
 class Aria(nn.Module):
     def __init__(self,opt_params):
-        super(Aria).__init__()
+        super(Aria, self).__init__()
         self.batch_size = opt_params["batch_size"]
         self.gamma = opt_params["gamma"]
         self.hiddenDim = 10
@@ -14,7 +14,7 @@ class Aria(nn.Module):
         self.msg_Enc = lin_Mod([4, 5], sftmx = False)
         self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
         self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
-        self.last_state = torch.zeros([self.batch_size, self.hiddenDim])
+        self.last_state = torch.zeros([1, self.hiddenDim], dtype=float)
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=opt_params["lr"])
 
@@ -26,10 +26,10 @@ class Aria(nn.Module):
         self.zObs = self.obs_Mod(obs) """
         
     def forward(self, obs, msg):
-        inO = torch.concat([obs, self.last_state], -1)
+        inO = torch.cat([obs, self.last_state], -1)
         o = self.obs_Mod(inO)
         m = self.msg_Enc(msg)
-        new_state = self.rep_Mod(torch.concat([o, m], -1))
+        new_state = self.rep_Mod(torch.cat([o, m], -1))
         self.last_state=new_state
         action = self.action_Mod(new_state)
         message = self.msg_Dec(new_state)
@@ -37,7 +37,9 @@ class Aria(nn.Module):
         return action, message
 
     def select_action(self, obs, msg):
-        action, message = self.forward(obs, msg)
+        obs_t = torch.tensor([obs])
+        msg_t = torch.tensor([msg])
+        action, message = self.forward(obs_t, msg_t)
         a_distrib = Categorical(action)
         m_distrib = Categorical(message)
         a = a_distrib.sample()
@@ -78,7 +80,7 @@ class Aria(nn.Module):
         return Gs
 class lin_Mod(nn.Module):
     def __init__(self, sizes = [2, 5, 6, 10, 10], sftmx = False):
-        super(lin_Mod).__init__()
+        super(lin_Mod, self).__init__()
         self.sizes = sizes
         L = []
         
@@ -91,4 +93,6 @@ class lin_Mod(nn.Module):
         self.mod = nn.ModuleList(L)
     
     def forward(self, x):
-        return self.mod(x)
+        for m in self.mod:
+            x_ = m(x)
+        return x_
