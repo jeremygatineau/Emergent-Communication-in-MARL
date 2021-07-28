@@ -51,8 +51,8 @@ class Aria(nn.Module):
         return a, m
 
     def train_on_batch(self, state, reward):
-        self.saved_obs.append(state[0])
-        self.saved_downlink_msgs.append(state[1])
+        self.saved_obs.append([state[0]])
+        self.saved_downlink_msgs.append([state[1]])
         self.saved_rewards.append(reward)
         self.batch_counter += 1
         if self.batch_counter >= self.batch_size:
@@ -60,13 +60,22 @@ class Aria(nn.Module):
             returns = self.getReturns(normalize=True)  
             self.optimizer.zero_grad()
             obs_tensor = torch.tensor(self.saved_obs[:self.batch_size], dtype=torch.float32)
+            dwn_msgs = torch.tensor(self.saved_downlink_msgs[:self.batch_size], dtype=torch.float32)
+            print(obs_tensor.shape)
+            action, message = self.forward(obs_tensor.float(), dwn_msgs.float())
+            a_distrib = Categorical(action)
+            m_distrib = Categorical(message)
+            a = a_distrib.sample()
+            m = m_distrib.sample()
+            act_logp = a_distrib.log_prob(a)
+            msg_logp = m_distrib.log_prob(m)
             returns_tensor = torch.tensor(returns, dtype=torch.float32)
             print("returns_tensor", returns_tensor)
             print("self.saved_act_Logp", self.saved_act_Logp)
             print("self.saved_msg_Logp", self.saved_msg_Logp)
             saved_act_Logp_ = torch.cat(self.saved_act_Logp, -1)
             saved_msg_Logp_ = torch.cat(self.saved_msg_Logp, -1)
-            loss = -(returns_tensor*(saved_act_Logp_+saved_msg_Logp_)).mean()
+            loss = -(returns_tensor*(act_logp+msg_logp)).mean()
             loss.backward(retain_graph=True)
             self.optimizer.step()
 
