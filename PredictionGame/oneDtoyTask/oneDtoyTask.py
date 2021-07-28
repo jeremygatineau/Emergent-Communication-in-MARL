@@ -65,7 +65,6 @@ class OneDfield():
         elif self.gen_fct_state[0] == 0 and self.gen_fct_state[1]==0:
             
             self.gen_fct_state[1] = np.random.randint(self.onoff_dutyCyle[0][0], self.onoff_dutyCyle[0][1])
-            print(self.gen_fct_state[1])
             self.gen_fct_state[0] = self.onoff_dutyCyle[1]
             return (0, 0)
         elif self.gen_fct_state[1]>0:

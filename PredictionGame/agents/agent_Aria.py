@@ -10,18 +10,20 @@ class Aria(nn.Module):
         self.gamma = opt_params["gamma"]
         self.hiddenDim = 10
         self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
-        self.action_Mod = lin_Mod([self.hiddenDim, 1], sftmx = True)
+        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
         self.msg_Enc = lin_Mod([4, 5], sftmx = False)
         self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
         self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
-        self.last_state = torch.zeros([1, self.hiddenDim], dtype=float)
+        self.last_state = torch.zeros([1, self.hiddenDim], dtype=torch.float32)
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=opt_params["lr"])
 
         self.saved_act_Logp = []
         self.saved_msg_Logp = []
         self.saved_rewards = []
-        self.saved_states = []
+        self.saved_obs = []
+        self.saved_downlink_msgs = []
+        self.batch_counter = 0
     """def embed_Obs(self, obs):
         self.zObs = self.obs_Mod(obs) """
         
@@ -37,9 +39,9 @@ class Aria(nn.Module):
         return action, message
 
     def select_action(self, obs, msg):
-        obs_t = torch.tensor([obs])
-        msg_t = torch.tensor([msg])
-        action, message = self.forward(obs_t, msg_t)
+        obs_t = torch.tensor([obs], dtype=torch.float32)
+        msg_t = torch.tensor([msg], dtype=torch.float32)
+        action, message = self.forward(obs_t.float(), msg_t.float())
         a_distrib = Categorical(action)
         m_distrib = Categorical(message)
         a = a_distrib.sample()
@@ -51,22 +53,29 @@ class Aria(nn.Module):
     def train_on_batch(self, state, reward):
         self.saved_obs.append(state[0])
         self.saved_downlink_msgs.append(state[1])
-        self.saved_reward(reward)
+        self.saved_rewards.append(reward)
         self.batch_counter += 1
         if self.batch_counter >= self.batch_size:
             
             returns = self.getReturns(normalize=True)  
             self.optimizer.zero_grad()
-            obs_tensor = torch.FloatTensor(self.saved_obs[:self.batch_size])
-            returns_tensor = torch.FloatTensor(returns)
-            loss = -(returns_tensor*(self.saved_act_Logp+self.saved_msg_Logp)).mean()
-            loss.backward()
+            obs_tensor = torch.tensor(self.saved_obs[:self.batch_size], dtype=torch.float32)
+            returns_tensor = torch.tensor(returns, dtype=torch.float32)
+            print("returns_tensor", returns_tensor)
+            print("self.saved_act_Logp", self.saved_act_Logp)
+            print("self.saved_msg_Logp", self.saved_msg_Logp)
+            saved_act_Logp_ = torch.cat(self.saved_act_Logp, -1)
+            saved_msg_Logp_ = torch.cat(self.saved_msg_Logp, -1)
+            loss = -(returns_tensor*(saved_act_Logp_+saved_msg_Logp_)).mean()
+            loss.backward(retain_graph=True)
             self.optimizer.step()
 
             self.saved_act_Logp = []
             self.saved_msg_Logp = []
             self.saved_rewards = []
-            self.saved_states = []
+            self.saved_obs = []
+            self.saved_downlink_msgs = []
+            self.batch_counter = 0
             return loss.item()
         return None
     def getReturns(self, normalize=False):
@@ -86,13 +95,14 @@ class lin_Mod(nn.Module):
         
         for i, s in enumerate(sizes[:-1]):
             L.append(nn.Linear(sizes[i], sizes[i+1]))
-            if i==len(sizes)-1 and sftmx==True:
-                L.append(nn.Softmax())
+            if i==len(sizes)-2 and sftmx==True:
+                L.append(nn.Softmax(dim=-1))
             else :
                 L.append(nn.ReLU())
         self.mod = nn.ModuleList(L)
     
     def forward(self, x):
+        x_ = x
         for m in self.mod:
-            x_ = m(x)
+            x_ = m(x_)
         return x_
