@@ -3,6 +3,8 @@ import torchvision
 import torch.nn as nn
 import numpy as np
 from torch.distributions import Categorical
+import torch.nn.utils as utils
+from torch.autograd import Variable
 class Aria(nn.Module):
     def __init__(self,opt_params):
         super(Aria, self).__init__()
@@ -43,7 +45,7 @@ class Aria(nn.Module):
         msg_t = torch.tensor([msg], dtype=torch.float32)
         self.saved_hid_states.append(self.last_state.detach())
         action, message, hid_state = self.forward(obs_t.float(), msg_t.float(), self.last_state)
-        self.last_state = hid_state
+        self.last_state = hid_state.detach()
         a_distrib = Categorical(action)
         m_distrib = Categorical(message)
         a = a_distrib.sample()
@@ -61,7 +63,7 @@ class Aria(nn.Module):
             
             returns = self.getReturns(normalize=True)  
             self.optimizer.zero_grad()
-            obs_tensor = torch.tensor(self.saved_obs[:self.batch_size], dtype=torch.float32)
+            """"obs_tensor = torch.tensor(self.saved_obs[:self.batch_size], dtype=torch.float32)
             dwn_msgs = torch.tensor(self.saved_downlink_msgs[:self.batch_size], dtype=torch.float32)
             last_states = torch.cat(self.saved_hid_states, 0)
             action, message, _ = self.forward(obs_tensor.float(), dwn_msgs.float(), last_states.float())
@@ -70,21 +72,19 @@ class Aria(nn.Module):
             a = a_distrib.sample()
             m = m_distrib.sample()
             act_logp = a_distrib.log_prob(a)
-            msg_logp = m_distrib.log_prob(m)
-            returns_tensor = torch.tensor(returns, dtype=torch.float32)
-            saved_act_Logp_ = torch.cat(self.saved_act_Logp, -1)
-            saved_msg_Logp_ = torch.cat(self.saved_msg_Logp, -1)
-            loss = -(returns_tensor*(act_logp+msg_logp)).mean()
-            loss.backward(retain_graph=True)
-            self.optimizer.step()
+            msg_logp = m_distrib.log_prob(m)"""
+            R = torch.zeros(1, 1)
+            loss = 0
+            for i in reversed(range(self.batch_size)):
+                R = self.gamma * R + self.saved_rewards[i]
+                loss = loss - (self.saved_msg_Logp[i]+self.saved_act_Logp[i])*Variable(R).sum()
+            loss = loss / self.batch_size
 
-            self.saved_act_Logp = []
-            self.saved_msg_Logp = []
-            self.saved_hid_states = []
-            self.saved_rewards = []
-            self.saved_obs = []
-            self.saved_downlink_msgs = []
-            self.batch_counter = 0
+
+            #loss = -(returns_tensor*(act_logp+msg_logp)).mean()
+            loss.backward()
+            utils.clip_grad_norm(self.parameters(), 40)
+            self.reset_batch()
             return loss.item()
         return None
     def getReturns(self, normalize=False):
@@ -96,6 +96,15 @@ class Aria(nn.Module):
         if normalize==True:
             return (Gs-np.mean(Gs))/np.std(Gs)
         return Gs
+    def reset_batch(self):
+        self.optimizer.step()
+        self.saved_act_Logp = []
+        self.saved_msg_Logp = []
+        self.saved_hid_states = []
+        self.saved_rewards = []
+        self.saved_obs = []
+        self.saved_downlink_msgs = []
+        self.batch_counter = 0
 class lin_Mod(nn.Module):
     def __init__(self, sizes = [2, 5, 6, 10, 10], sftmx = False):
         super(lin_Mod, self).__init__()
