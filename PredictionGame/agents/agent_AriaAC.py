@@ -6,17 +6,30 @@ from torch.distributions import Categorical
 import torch.nn.utils as utils
 from torch.autograd import Variable
 class AriaAC(nn.Module):
-    def __init__(self,opt_params):
+    def __init__(self,opt_params, with_memory=False):
         super(AriaAC, self).__init__()
         self.batch_size = opt_params["batch_size"]
         self.gamma = opt_params["gamma"]
-        self.hiddenDim = 10
-        
-        self.actor = ariaActor()
-        self.critic = ariaCritic()
+        self.eps = np.finfo(np.float32).eps.item()
+        self.hiddenDim = 2
+        self.memory_size = 2
+        self.with_memory = with_memory
+        self.obs_Mod = lin_Mod([2, self.hiddenDim//2])
+        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
+        self.msg_Enc = lin_Mod([4, self.hiddenDim//2], sftmx = False)
+        self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
+        self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
+        if self.with_memory:
+            self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
+            self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size+1)]
+        else : 
+            self.memory = None
+            self.memories = None
+        self.value_head = lin_Mod([self.hiddenDim, 1])
         self.optimizer = torch.optim.Adam(self.parameters(), lr=opt_params["lr"])
 
         self.saved_act_Logp = []
+        self.saved_values = []
         self.saved_entropies = []
         self.saved_msg_Logp = []
         self.saved_hid_states = []
@@ -24,31 +37,44 @@ class AriaAC(nn.Module):
         self.saved_obs = []
         self.saved_downlink_msgs = []
         self.batch_counter = 0
+    """def embed_Obs(self, obs):
+        self.zObs = self.obs_Mod(obs) """
         
-    def forward(self, obs, msg, last_state):
-        inO = torch.cat([obs, last_state[self.batch_counter]], -1)
-        o = self.obs_Mod(inO)
+    def forward(self, obs, msg, memory):
+        o = self.obs_Mod(obs)
         m = self.msg_Enc(msg)
-        new_state = self.rep_Mod(torch.cat([o, m], -1))
-        action = self.action_Mod(new_state)
-        message = self.msg_Dec(new_state)
-
-        return action, message, new_state
+        z = self.rep_Mod(torch.cat([o, m], -1))
+        if self.with_memory:
+            hz, cz = self.memory(z, (memory[:, :self.memory_size], memory[:, self.memory_size:]))
+            out_memory = torch.cat([hz, cz], dim=1)
+        else:
+            hz = z
+            out_memory = None
+        action = self.action_Mod(hz)
+        message = self.msg_Dec(hz)
+        value = self.value_head(hz)
+        return action, message, out_memory, value
 
     def select_action(self, obs, msg):
         obs_t = torch.tensor([obs], dtype=torch.float32)
         msg_t = torch.tensor([msg], dtype=torch.float32)
-        self.saved_hid_states.append(self.last_state)
-        action, message, hid_state = self.forward(obs_t.float(), msg_t.float(), self.last_state)
-        self.last_state[self.batch_counter+1] = hid_state
+        
+        if self.with_memory:
+            action, message, hid_state, value = self.forward(obs_t.float(), msg_t.float(), self.memories[self.batch_counter])
+            self.memories[self.batch_counter+1] = hid_state
+        else:
+            action, message, _, value = self.forward(obs_t.float(), msg_t.float(), None)
+        
+        
         a_distrib = Categorical(action)
         m_distrib = Categorical(message)
         a = a_distrib.sample()
         m = m_distrib.sample()
-        a_entropy = a_distrib.entropy() 
-        m_entropy = m_distrib.entropy() 
+        a_entropy = a_distrib.entropy().sum() 
+        m_entropy = m_distrib.entropy().sum() 
         self.saved_act_Logp.append(a_distrib.log_prob(a))
         self.saved_msg_Logp.append(m_distrib.log_prob(m))
+        self.saved_values.append(value)
         return a, m, a_entropy + m_entropy
 
     def train_on_batch(self, state, reward, entropy):
@@ -59,34 +85,25 @@ class AriaAC(nn.Module):
         self.batch_counter += 1
         if self.batch_counter >= self.batch_size:
             
-            returns = self.getReturns(normalize=True)  
             self.optimizer.zero_grad()
-            """"obs_tensor = torch.tensor(self.saved_obs[:self.batch_size], dtype=torch.float32)
-            dwn_msgs = torch.tensor(self.saved_downlink_msgs[:self.batch_size], dtype=torch.float32)
-            last_states = torch.cat(self.saved_hid_states, 0)
-            action, message, _ = self.forward(obs_tensor.float(), dwn_msgs.float(), last_states.float())
-            a_distrib = Categorical(action)
-            m_distrib = Categorical(message)
-            a = a_distrib.sample()
-            m = m_distrib.sample()
-            act_logp = a_distrib.log_prob(a)
-            msg_logp = m_distrib.log_prob(m)"""
-            R = torch.zeros(1, 1)
+            returns = self.getReturns(normalize=False)
+            returns = torch.tensor(returns)
+            returns = (returns - returns.mean()) / (returns.std() + self.eps)
+
             loss = 0
-            for i in reversed(range(self.batch_size)):
-                R = self.gamma * R + self.saved_rewards[i]
-                loss = loss - (self.saved_msg_Logp[i]+self.saved_act_Logp[i])*Variable(R).sum() #- 0.001*torch.sum(self.saved_entropies[i])
-            loss = loss / self.batch_size
-
-
-            #loss = -(returns_tensor*(act_logp+msg_logp)).mean()
+            for a_logp, m_logp, ret, val, entro in zip(self.saved_act_Logp, self.saved_msg_Logp, returns, self.saved_values, self.saved_entropies):
+                advantage = ret - val.item()
+                policy_loss = -(a_logp + m_logp)*advantage.detach()        
+                value_loss = advantage.pow(2)
+                loss += policy_loss+value_loss#+0.001*entro
+            
             loss.backward(retain_graph=True)
-            utils.clip_grad_norm_(self.parameters(), 40)
             self.optimizer.step()
             rewards = np.copy(self.saved_rewards)
             self.reset_batch()
             return loss.item(), rewards
         return None, None
+
     def getReturns(self, normalize=False):
         _R = 0
         Gs = []
@@ -97,7 +114,9 @@ class AriaAC(nn.Module):
             return (Gs-np.mean(Gs))/np.std(Gs)
         return Gs
     def reset_batch(self):
+        self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size+1)]
         self.saved_act_Logp = []
+        self.saved_values = []
         self.saved_entropies = []
         self.saved_msg_Logp = []
         self.saved_hid_states = []
@@ -124,7 +143,6 @@ class lin_Mod(nn.Module):
         for m in self.mod:
             x_ = m(x_)
         return x_
-
 class ariaActor(nn.Module):
     def __init__(self, hidden_dim=10):
         super(ariaActor, self).__init__()
