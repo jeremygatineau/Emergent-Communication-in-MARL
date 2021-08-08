@@ -5,19 +5,15 @@ import numpy as np
 from torch.distributions import Categorical
 import torch.nn.utils as utils
 from torch.autograd import Variable
-class Aria(nn.Module):
+class AriaAC(nn.Module):
     def __init__(self,opt_params):
-        super(Aria, self).__init__()
+        super(AriaAC, self).__init__()
         self.batch_size = opt_params["batch_size"]
         self.gamma = opt_params["gamma"]
         self.hiddenDim = 10
-        self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
-        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
-        self.msg_Enc = lin_Mod([4, 5], sftmx = False)
-        self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
-        self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
-        self.last_state = [torch.zeros([1, self.hiddenDim], dtype=torch.float32) for _ in range(self.batch_size+1)]
-
+        
+        self.actor = ariaActor()
+        self.critic = ariaCritic()
         self.optimizer = torch.optim.Adam(self.parameters(), lr=opt_params["lr"])
 
         self.saved_act_Logp = []
@@ -28,8 +24,6 @@ class Aria(nn.Module):
         self.saved_obs = []
         self.saved_downlink_msgs = []
         self.batch_counter = 0
-    """def embed_Obs(self, obs):
-        self.zObs = self.obs_Mod(obs) """
         
     def forward(self, obs, msg, last_state):
         inO = torch.cat([obs, last_state[self.batch_counter]], -1)
@@ -103,7 +97,6 @@ class Aria(nn.Module):
             return (Gs-np.mean(Gs))/np.std(Gs)
         return Gs
     def reset_batch(self):
-        self.optimizer.step()
         self.saved_act_Logp = []
         self.saved_entropies = []
         self.saved_msg_Logp = []
@@ -131,3 +124,43 @@ class lin_Mod(nn.Module):
         for m in self.mod:
             x_ = m(x_)
         return x_
+
+class ariaActor(nn.Module):
+    def __init__(self, hidden_dim=10):
+        super(ariaActor, self).__init__()
+        self.hiddenDim = hidden_dim
+        self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
+        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
+        self.msg_Enc = lin_Mod([4, 5], sftmx = False)
+        self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
+        self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
+       
+    def forward(self, obs, msg, last_state):
+        inO = torch.cat([obs, last_state[self.batch_counter]], -1)
+        o = self.obs_Mod(inO)
+        m = self.msg_Enc(msg)
+        new_state = self.rep_Mod(torch.cat([o, m], -1))
+        action = self.action_Mod(new_state)
+        message = self.msg_Dec(new_state)
+
+        return action, message, new_state
+
+class ariaCritic(nn.Module):
+    def __init__(self, hidden_dim=10):
+        super(ariaCritic, self).__init__()
+        self.hiddenDim = hidden_dim
+        self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
+        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
+        self.msg_Enc = lin_Mod([4, 5], sftmx = False)
+        self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
+        self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
+       
+    def forward(self, obs, msg, last_state):
+        inO = torch.cat([obs, last_state[self.batch_counter]], -1)
+        o = self.obs_Mod(inO)
+        m = self.msg_Enc(msg)
+        new_state = self.rep_Mod(torch.cat([o, m], -1))
+        action = self.action_Mod(new_state)
+        message = self.msg_Dec(new_state)
+
+        return action, message, new_state
