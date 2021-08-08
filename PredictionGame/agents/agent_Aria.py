@@ -16,11 +16,12 @@ class Aria(nn.Module):
         self.msg_Enc = lin_Mod([4, 5], sftmx = False)
         self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
         self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
-        self.last_state = torch.zeros([1, self.hiddenDim], dtype=torch.float32)
+        self.last_state = [torch.zeros([1, self.hiddenDim], dtype=torch.float32) for _ in range(self.batch_size+1)]
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=opt_params["lr"])
 
         self.saved_act_Logp = []
+        self.saved_entropies = []
         self.saved_msg_Logp = []
         self.saved_hid_states = []
         self.saved_rewards = []
@@ -31,7 +32,7 @@ class Aria(nn.Module):
         self.zObs = self.obs_Mod(obs) """
         
     def forward(self, obs, msg, last_state):
-        inO = torch.cat([obs, last_state], -1)
+        inO = torch.cat([obs, last_state[self.batch_counter]], -1)
         o = self.obs_Mod(inO)
         m = self.msg_Enc(msg)
         new_state = self.rep_Mod(torch.cat([o, m], -1))
@@ -43,21 +44,24 @@ class Aria(nn.Module):
     def select_action(self, obs, msg):
         obs_t = torch.tensor([obs], dtype=torch.float32)
         msg_t = torch.tensor([msg], dtype=torch.float32)
-        self.saved_hid_states.append(self.last_state.detach())
+        self.saved_hid_states.append(self.last_state)
         action, message, hid_state = self.forward(obs_t.float(), msg_t.float(), self.last_state)
-        self.last_state = hid_state.detach()
+        self.last_state[self.batch_counter+1] = hid_state
         a_distrib = Categorical(action)
         m_distrib = Categorical(message)
         a = a_distrib.sample()
         m = m_distrib.sample()
+        a_entropy = a_distrib.entropy() 
+        m_entropy = m_distrib.entropy() 
         self.saved_act_Logp.append(a_distrib.log_prob(a))
         self.saved_msg_Logp.append(m_distrib.log_prob(m))
-        return a, m
+        return a, m, a_entropy + m_entropy
 
-    def train_on_batch(self, state, reward):
+    def train_on_batch(self, state, reward, entropy):
         self.saved_obs.append(state[0])
         self.saved_downlink_msgs.append(state[1])
         self.saved_rewards.append(reward)
+        self.saved_entropies.append(entropy)
         self.batch_counter += 1
         if self.batch_counter >= self.batch_size:
             
@@ -77,16 +81,18 @@ class Aria(nn.Module):
             loss = 0
             for i in reversed(range(self.batch_size)):
                 R = self.gamma * R + self.saved_rewards[i]
-                loss = loss - (self.saved_msg_Logp[i]+self.saved_act_Logp[i])*Variable(R).sum()
+                loss = loss - (self.saved_msg_Logp[i]+self.saved_act_Logp[i])*Variable(R).sum() #- 0.001*torch.sum(self.saved_entropies[i])
             loss = loss / self.batch_size
 
 
             #loss = -(returns_tensor*(act_logp+msg_logp)).mean()
-            loss.backward()
-            utils.clip_grad_norm(self.parameters(), 40)
+            loss.backward(retain_graph=True)
+            utils.clip_grad_norm_(self.parameters(), 40)
+            self.optimizer.step()
+            rewards = np.copy(self.saved_rewards)
             self.reset_batch()
-            return loss.item()
-        return None
+            return loss.item(), rewards
+        return None, None
     def getReturns(self, normalize=False):
         _R = 0
         Gs = []
@@ -99,6 +105,7 @@ class Aria(nn.Module):
     def reset_batch(self):
         self.optimizer.step()
         self.saved_act_Logp = []
+        self.saved_entropies = []
         self.saved_msg_Logp = []
         self.saved_hid_states = []
         self.saved_rewards = []
