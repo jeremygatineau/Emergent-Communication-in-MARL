@@ -15,17 +15,20 @@ class AriaAC(nn.Module):
         self.memory_size = 10
         self.with_memory = with_memory
         self.obs_Mod = lin_Mod([2, self.hiddenDim//2])
-        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
         self.msg_Enc = lin_Mod([4, self.hiddenDim//2], sftmx = False)
-        self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
         self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
         if self.with_memory:
             self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
             self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size+1)]
+            self.action_Mod = lin_Mod([self.memory_size, 2], sftmx = True)
+            self.msg_Dec = lin_Mod([self.memory_size, 4], sftmx=True)
+            self.value_head = lin_Mod([self.memory_size, 1])
         else : 
             self.memory = None
             self.memories = None
-        self.value_head = lin_Mod([self.hiddenDim, 1])
+            self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
+            self.value_head = lin_Mod([self.hiddenDim, 1])
+
         self.optimizer = torch.optim.Adam(self.parameters(), lr=opt_params["lr"])
 
         self.saved_act_Logp = []
@@ -46,6 +49,7 @@ class AriaAC(nn.Module):
         z = self.rep_Mod(torch.cat([o, m], -1))
         if self.with_memory:
             hz, cz = self.memory(z, (memory[:, :self.memory_size], memory[:, self.memory_size:]))
+            
             out_memory = torch.cat([hz, cz], dim=1)
         else:
             hz = z

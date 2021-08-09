@@ -18,8 +18,8 @@ class ToyTask():
         
     def _getRewardsFromObsPred(self, pred, obs):
         rewards = [0, 0]
-        rewards[0] = int(pred[0] == obs[0][1])
-        rewards[1] = int(pred[1] == obs[1][0])
+        rewards[0] = int(pred[0] == obs[0][1]) + int(pred[1] == obs[1][0])
+        rewards[1] = int(pred[1] == obs[1][0]) + int(pred[0] == obs[0][1])
         return rewards
     def reset(self):
         nxtObs = self.hiddenStateField.reset()
@@ -64,7 +64,7 @@ class OneDfield():
             return (1, 1)
         elif self.gen_fct_state[0] == 0 and self.gen_fct_state[1]==0:
             
-            self.gen_fct_state[1] = 8#np.random.randint(self.onoff_dutyCyle[0][0], self.onoff_dutyCyle[0][1])
+            self.gen_fct_state[1] = np.random.randint(self.onoff_dutyCyle[0][0], self.onoff_dutyCyle[0][1])
             self.gen_fct_state[0] = self.onoff_dutyCyle[1]
             return (0, 0)
         elif self.gen_fct_state[1]>0:
