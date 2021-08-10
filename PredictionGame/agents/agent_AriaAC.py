@@ -11,9 +11,11 @@ class AriaAC(nn.Module):
         self.aidi = aidi
         self.batch_size = opt_params["batch_size"]
         self.gamma = opt_params["gamma"]
+        self.vocabulary_size = opt_params["vocab_size"]
+        self.epsilon = opt_params["eps"]
         self.eps = np.finfo(np.float32).eps.item()
-        self.hiddenDim = 20
-        self.memory_size = 10
+        self.hiddenDim = 8
+        self.memory_size = 8
         self.with_memory = with_memory
         self.obs_Mod = lin_Mod([2, self.hiddenDim//2])
         self.msg_Enc = lin_Mod([4, self.hiddenDim//2, self.hiddenDim//2], sftmx = False)
@@ -22,8 +24,8 @@ class AriaAC(nn.Module):
             self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
             self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size+1)]
             self.action_Mod = nn.Sequential(lin_Mod([self.memory_size, 1], sftmx = False), nn.Sigmoid())
-            self.msg_Dec = lin_Mod([self.memory_size, self.memory_size, 4], sftmx=True)
-            self.value_head = lin_Mod([self.memory_size, 1])
+            self.msg_Dec = lin_Mod([self.memory_size, self.memory_size, self.vocabulary_size], sftmx=True)
+            self.value_head = lin_Mod([self.memory_size, self.memory_size, 1])
         else : 
             self.memory = None
             self.memories = None
@@ -41,8 +43,6 @@ class AriaAC(nn.Module):
         self.saved_obs = []
         self.saved_downlink_msgs = []
         self.batch_counter = 0
-    """def embed_Obs(self, obs):
-        self.zObs = self.obs_Mod(obs) """
         
     def forward(self, obs, msg, memory):
         o = self.obs_Mod(obs)
@@ -60,11 +60,8 @@ class AriaAC(nn.Module):
         value = self.value_head(hz)
         return action, message, out_memory, value
 
-    def select_action(self, obs, msg, eps=0):
-        # if np.random.random()<eps:
-        #    a = torch.randint(0, 2, [1])
-        #    m = torch.randint(0, 4, [1])
-        #    return a, m 
+    def select_action(self, obs, msg):
+
         obs_t = torch.tensor([obs], dtype=torch.float32)
         msg_t = torch.tensor([msg], dtype=torch.float32)
         
@@ -73,9 +70,7 @@ class AriaAC(nn.Module):
             self.memories[self.batch_counter+1] = hid_state
         else:
             action, message, _, value = self.forward(obs_t.float(), msg_t.float(), None)
-        if self.aidi ==1:
-            #print(action, message)
-            pass
+
         a_distrib = Categorical(torch.cat([action, 1-action], -1))
         m_distrib = Categorical(message)
         a = a_distrib.sample()
@@ -96,7 +91,7 @@ class AriaAC(nn.Module):
         if self.batch_counter >= self.batch_size:
             
             self.optimizer.zero_grad()
-            returns = self.getReturns(normalize=False)
+            returns = self.getReturns(normalize=True)
             returns = torch.tensor(returns)
             rewards = torch.tensor(self.saved_rewards)
             policy_loss = 0
@@ -111,7 +106,7 @@ class AriaAC(nn.Module):
                 value_loss += advantage.pow(2)"""
             policy_loss /= self.batch_size
             value_loss /= self.batch_size
-            entropy_loss =  -0.01*torch.cat(self.saved_entropies).sum()
+            entropy_loss =  -self.epsilon*torch.cat(self.saved_entropies).sum()
             loss = policy_loss+ value_loss + entropy_loss
             loss.backward(retain_graph=True)
             self.optimizer.step()
@@ -131,7 +126,8 @@ class AriaAC(nn.Module):
             return (Gs-np.mean(Gs))/np.std(Gs)
         return Gs
     def reset_batch(self):
-        self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size+1)]
+        self.memories[0] = self.memories[-1].detach()
+        self.memories[1:] = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size)]
         self.saved_act_Logp = []
         self.saved_values = []
         self.saved_entropies = []
@@ -142,7 +138,7 @@ class AriaAC(nn.Module):
         self.saved_downlink_msgs = []
         self.batch_counter = 0
 class lin_Mod(nn.Module):
-    def __init__(self, sizes = [2, 5, 6, 10, 10], sftmx = False):
+    def __init__(self, sizes, sftmx = False):
         super(lin_Mod, self).__init__()
         self.sizes = sizes
         L = []
