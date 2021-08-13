@@ -37,14 +37,14 @@ def plot_preds(obsers, preds):
     preds = np.array(preds)
     
     fig, axs = plt.subplots(1, 2, figsize=(16, 6))
-    axs[0].plot(obsers[:, 0])
-    axs[0].plot(preds[:, 0])
+    axs[0].plot(range(obsers.shape[0]), obsers[:, 0])
+    axs[0].plot(range(obsers.shape[0]), preds[:, 0])
     axs[0].legend(['observations', 'predictions'])
     axs[0].set_title('Agent 0')
     axs[0].set_xlabel('Epoch')
 
-    axs[1].plot(obsers[:, 1])
-    axs[1].plot(preds[:, 1])
+    axs[1].plot(range(obsers.shape[0]), obsers[:, 1])
+    axs[1].plot(range(obsers.shape[0]), preds[:, 1])
     axs[1].legend(['observations', 'predictions'])
     axs[1].set_title('Agent 1')
     axs[1].set_xlabel('Epoch')
@@ -61,7 +61,7 @@ def get_images(obsers, preds):
     plt.xlabel('Epoch')
     fig0.canvas.draw()
     im0 = PIL.Image.frombytes('RGB', fig0.canvas.get_width_height(),fig0.canvas.tostring_rgb())
-        
+    plt.close()
     fig1 = plt.figure(1)
     plt.plot(obsers[:, 1])
     plt.plot(preds[:, 1])
@@ -70,7 +70,7 @@ def get_images(obsers, preds):
     plt.xlabel('Epoch')
     fig1.canvas.draw()
     im1 = PIL.Image.frombytes('RGB', fig1.canvas.get_width_height(),fig1.canvas.tostring_rgb())
-
+    plt.close()
     return im0, im1
 
 # %%
@@ -102,11 +102,13 @@ while epoch<epochs:
                    "policy loss A1": loss1[0], "value loss A1": loss1[1], \
                    "entropy loss A1": loss1[2], "reward A1": np.mean(rew1),\
                    "mean policy A0": mean_policy0, "mean policy A1": mean_policy1})
-        
+        if epoch==2 and mean_policy1 == 0.5 and mean_policy0 == 0.5:
+            raise ValueError('Mean policies not updating, try restarting')
+
         losses.append([loss0, loss1])
         rewards1.append(rew0)
         rewards1.append(rew1)
-        if epoch%5==0:
+        if epoch%50==0:
             im0, im1 = get_images(np.array(observations), np.array(predictions))
             table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
 
