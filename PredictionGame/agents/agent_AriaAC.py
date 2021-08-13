@@ -84,11 +84,8 @@ class AriaAC(nn.Module):
 
 
     def train_on_batch(self, state, reward):
-        self.popBuffer()
-        self.pushBuffer(state[0], state[1], reward)
-        self.saved_obs.append(state[0])
-        self.saved_downlink_msgs.append(state[1])
-        self.saved_rewards.append(reward)
+        #self.popBuffer()
+        self.pushBufferEpisode(state[0], state[1], reward)
         self.batch_counter += 1
         if self.batch_counter >= self.batch_size:
             
@@ -114,7 +111,7 @@ class AriaAC(nn.Module):
             self.optimizer.step()
             mean_policy = torch.cat(self.saved_act_Logp, 0).exp().mean(dim=0)
             rewards = np.copy(self.saved_rewards)
-            self.reset_batch()
+            self.reset_Buffer()
             return np.round([policy_loss.item(), value_loss.item(), entropy_loss.item()], 2), rewards, mean_policy
         return None, None, None
 

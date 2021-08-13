@@ -12,15 +12,13 @@ from agents.agent_AriaAC import AriaAC
 from IPython import display
 import wandb
 import PIL
-
-# %%
-
-
+import matplotlib
+matplotlib.use('Agg')
 
 
 epochs = 1000
-opt_params = {"lr":0.005, "batch_size":20, "gamma":0.999, "vocab_size":4, "eps":0.01}
-wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
+opt_params = {"lr":0.005, "training_loops":1, "batch_size":20, "replay_size":20, "gamma":0.999, "vocab_size":4, "eps":0.01}
+run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0).float()
 agent1 = AriaAC(opt_params=opt_params, with_memory=True, aidi=1).float()
@@ -30,6 +28,7 @@ Task = ToyTask(field=field, observationMappingFct=lambda x: (x>0.5).astype(int),
 
 wandb.watch((agent0, agent1), log="all", log_freq=5)
 table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
+run.log({"Batch Predictions": table})
 # %%
 def plot_preds(obsers, preds):
     display.clear_output(wait=True)
@@ -58,16 +57,18 @@ def get_images(obsers, preds):
     plt.plot(obsers[:, 0])
     plt.plot(preds[:, 0])
     plt.legend(['observations', 'predictions'])
-    plt.set_title('Agent 0')
-    plt.set_xlabel('Epoch')
+    plt.title('Agent 0')
+    plt.xlabel('Epoch')
+    fig0.canvas.draw()
     im0 = PIL.Image.frombytes('RGB', fig0.canvas.get_width_height(),fig0.canvas.tostring_rgb())
         
     fig1 = plt.figure(1)
     plt.plot(obsers[:, 1])
     plt.plot(preds[:, 1])
     plt.legend(['observations', 'predictions'])
-    plt.set_title('Agent 1')
-    plt.set_xlabel('Epoch')
+    plt.title('Agent 1')
+    plt.xlabel('Epoch')
+    fig1.canvas.draw()
     im1 = PIL.Image.frombytes('RGB', fig1.canvas.get_width_height(),fig1.canvas.tostring_rgb())
 
     return im0, im1
@@ -97,17 +98,20 @@ while epoch<epochs:
     downlink_msgs = downlink_msgs_
     if loss0 is not None:
         wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
-                   "entropy loss A0": loss0[2],"reward A0": rew0, \
-                   "policy loss A1": loss0[0], "value loss A1": loss0[1], \
-                   "entropy loss A1": loss0[2], "reward A1": rew1,\
+                   "entropy loss A0": loss0[2],"reward A0": np.mean(rew0), \
+                   "policy loss A1": loss1[0], "value loss A1": loss1[1], \
+                   "entropy loss A1": loss1[2], "reward A1": np.mean(rew1),\
                    "mean policy A0": mean_policy0, "mean policy A1": mean_policy1})
         
         losses.append([loss0, loss1])
         rewards1.append(rew0)
         rewards1.append(rew1)
         if epoch%5==0:
-            im0, im1 = get_images(observations, predictions)
+            im0, im1 = get_images(np.array(observations), np.array(predictions))
+            table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
+
             table.add_data(epoch,  wandb.Image(im0),  wandb.Image(im1))
+            run.log({"Batch Predictions": table})
         epoch+=1
         observations = []
         predictions = []
