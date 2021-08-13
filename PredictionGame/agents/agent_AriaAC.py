@@ -13,6 +13,8 @@ class AriaAC(nn.Module):
         self.gamma = opt_params["gamma"]
         self.vocabulary_size = opt_params["vocab_size"]
         self.epsilon = opt_params["eps"]
+        self.replay_size = opt_params["replay_size"]
+        self.training_loops = opt_params["training_loops"]
         self.eps = np.finfo(np.float32).eps.item()
         self.hiddenDim = 8
         self.memory_size = 8
@@ -77,13 +79,13 @@ class AriaAC(nn.Module):
         m = m_distrib.sample()
         a_entropy = a_distrib.entropy() 
         m_entropy = m_distrib.entropy()
-        self.saved_act_Logp.append(a_distrib.log_prob(a))
-        self.saved_msg_Logp.append(m_distrib.log_prob(m))
-        self.saved_values.append(value)
-        self.saved_entropies.append(a_entropy + m_entropy)
+        self.pushBufferSelect(a_distrib.log_prob(a), m_distrib.log_prob(m), value, a_entropy + m_entropy)
         return a, m
 
+
     def train_on_batch(self, state, reward):
+        self.popBuffer()
+        self.pushBuffer(state[0], state[1], reward)
         self.saved_obs.append(state[0])
         self.saved_downlink_msgs.append(state[1])
         self.saved_rewards.append(reward)
@@ -125,7 +127,31 @@ class AriaAC(nn.Module):
         if normalize==True:
             return (Gs-np.mean(Gs))/np.std(Gs)
         return Gs
-    def reset_batch(self):
+    
+    
+    def popBuffer(self):
+        self.saved_act_Logp[:-1] = self.saved_act_Logp[1:]
+        self.saved_values[:-1] = self.saved_values[1:]
+        self.saved_entropies[:-1] = self.saved_entropies[1:]
+        self.saved_msg_Logp[:-1] = self.saved_msg_Logp[1:]
+        self.saved_hid_states[:-1] = self.saved_hid_states[1:]
+        self.saved_rewards[:-1] = self.saved_rewards[1:]
+        self.saved_obs[:-1] = self.saved_obs[1:]
+        self.saved_downlink_msgs = self.saved_downlink_msgs[1:]
+    def sampleBatch(self):
+        indices = np.random.randint(0, self.replay_size, self.batch_size)
+        return indices
+    def pushBufferEpisode(self, obs, msg, reward):
+        self.saved_obs.append(obs)
+        self.saved_downlink_msgs.append(msg)
+        self.saved_rewards.append(reward)
+
+    def pushBufferSelect(self, a_lp, m_lp, val, ent):
+        self.saved_act_Logp.append(a_lp)
+        self.saved_msg_Logp.append(m_lp)
+        self.saved_values.append(val)
+        self.saved_entropies.append(ent)
+    def reset_Buffer(self):
         self.memories[0] = self.memories[-1].detach()
         self.memories[1:] = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size)]
         self.saved_act_Logp = []
@@ -159,26 +185,6 @@ class lin_Mod(nn.Module):
 class ariaActor(nn.Module):
     def __init__(self, hidden_dim=10):
         super(ariaActor, self).__init__()
-        self.hiddenDim = hidden_dim
-        self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
-        self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)
-        self.msg_Enc = lin_Mod([4, 5], sftmx = False)
-        self.msg_Dec = lin_Mod([self.hiddenDim, 4], sftmx=True)
-        self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
-       
-    def forward(self, obs, msg, last_state):
-        inO = torch.cat([obs, last_state[self.batch_counter]], -1)
-        o = self.obs_Mod(inO)
-        m = self.msg_Enc(msg)
-        new_state = self.rep_Mod(torch.cat([o, m], -1))
-        action = self.action_Mod(new_state)
-        message = self.msg_Dec(new_state)
-
-        return action, message, new_state
-
-class ariaCritic(nn.Module):
-    def __init__(self, hidden_dim=10):
-        super(ariaCritic, self).__init__()
         self.hiddenDim = hidden_dim
         self.obs_Mod = lin_Mod([2+self.hiddenDim, 5])
         self.action_Mod = lin_Mod([self.hiddenDim, 2], sftmx = True)

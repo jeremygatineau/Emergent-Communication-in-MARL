@@ -1,0 +1,22 @@
+{
+    "os": "Windows-10-10.0.19041-SP0",
+    "python": "3.8.5",
+    "heartbeatAt": "2021-08-13T20:10:30.444373",
+    "startedAt": "2021-08-13T20:10:28.892952",
+    "docker": null,
+    "cpu_count": 12,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "c:/Users/pizza/OneDrive/Documents/GitHub/Emergent-Communication-in-MARL/PredictionGame/test_agent.py",
+    "codePath": "PredictionGame\\test_agent.py",
+    "git": {
+        "remote": "https://github.com/JohnSaliver/Emergent-Communication-in-MARL.git",
+        "commit": "170cc48187c6c5e668ab43a505b63845f322352e"
+    },
+    "email": "51422732+JohnSaliver@users.noreply.github.com",
+    "root": "C:/Users/pizza/OneDrive/Documents/GitHub/Emergent-Communication-in-MARL",
+    "host": "DESKTOP-TH7CDT3",
+    "username": "pizza",
+    "executable": "C:\\Users\\pizza\\anaconda3\\python.exe"
+}
