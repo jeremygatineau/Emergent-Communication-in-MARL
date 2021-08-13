@@ -16,8 +16,8 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = 1000
-opt_params = {"lr":0.005, "training_loops":1, "batch_size":20, "replay_size":20, "gamma":0.999, "vocab_size":4, "eps":0.01}
+epochs = 10000
+opt_params = {"lr":0.001, "training_loops":1, "batch_size":50, "replay_size":50, "gamma":0.999, "vocab_size":4, "eps":0.01}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0).float()
@@ -97,13 +97,14 @@ while epoch<epochs:
     obs = obs_
     downlink_msgs = downlink_msgs_
     if loss0 is not None:
+        if epoch==2 and mean_policy1 == 0.5 and mean_policy0 == 0.5:
+            raise ValueError('Mean policies not updating, try restarting')
         wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
                    "entropy loss A0": loss0[2],"reward A0": np.mean(rew0), \
                    "policy loss A1": loss1[0], "value loss A1": loss1[1], \
                    "entropy loss A1": loss1[2], "reward A1": np.mean(rew1),\
                    "mean policy A0": mean_policy0, "mean policy A1": mean_policy1})
-        if epoch==2 and mean_policy1 == 0.5 and mean_policy0 == 0.5:
-            raise ValueError('Mean policies not updating, try restarting')
+        
 
         losses.append([loss0, loss1])
         rewards1.append(rew0)

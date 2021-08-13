@@ -5,9 +5,9 @@ import numpy as np
 from torch.distributions import Categorical
 import torch.nn.utils as utils
 from torch.autograd import Variable
-class AriaAC(nn.Module):
+class AriaAC_ER(nn.Module):
     def __init__(self,opt_params, with_memory=False, aidi=None):
-        super(AriaAC, self).__init__()
+        super(AriaAC_ER, self).__init__()
         self.aidi = aidi
         self.batch_size = opt_params["batch_size"]
         self.gamma = opt_params["gamma"]
@@ -24,10 +24,11 @@ class AriaAC(nn.Module):
         self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
         if self.with_memory:
             self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
-            self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size+1)]
+            self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.replay_size+1)]
             self.action_Mod = nn.Sequential(lin_Mod([self.memory_size, 1], sftmx = False), nn.Sigmoid())
             self.msg_Dec = lin_Mod([self.memory_size, self.memory_size, self.vocabulary_size], sftmx=True)
             self.value_head = lin_Mod([self.memory_size, self.memory_size, 1])
+            self.hidden_statesTable = np.zeros(self.replay_size)
         else : 
             self.memory = None
             self.memories = None
@@ -68,8 +69,8 @@ class AriaAC(nn.Module):
         msg_t = torch.tensor([msg], dtype=torch.float32)
         
         if self.with_memory:
-            action, message, hid_state, value = self.forward(obs_t.float(), msg_t.float(), self.memories[self.batch_counter])
-            self.memories[self.batch_counter+1] = hid_state
+            action, message, hid_state, value = self.forward(obs_t.float(), msg_t.float(), self.memories[self.hidden_statesTable[-1]])
+            self.memories[self.replay_counter+1] = hid_state
         else:
             action, message, _, value = self.forward(obs_t.float(), msg_t.float(), None)
 
@@ -135,6 +136,9 @@ class AriaAC(nn.Module):
         self.saved_rewards[:-1] = self.saved_rewards[1:]
         self.saved_obs[:-1] = self.saved_obs[1:]
         self.saved_downlink_msgs[:-1] = self.saved_downlink_msgs[1:]
+        self.memories[self.hidden_statesTable[0]] = torch.zeros([1, 2*self.memory_size], dtype=torch.float32)
+        self.memories[self.hidden_statesTable[1]] = self.hidden_statesTable[1].detach() 
+        self.hidden_statesTable[:-1] = self.hidden_statesTable[1:]
     def sampleBatch(self):
         indices = np.random.randint(0, self.replay_size, self.batch_size)
         return indices
