@@ -14,11 +14,12 @@ class AriaAC:
         self.epsilon = opt_params["eps"]
         self.replay_size = opt_params["replay_size"]
         self.training_loops = opt_params["training_loops"]
+        self.memory_size = opt_params["memory_size"]
         self.eps = np.finfo(np.float32).eps.item()
         self.with_memory = with_memory
         
-        self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).eval()
-        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).train()
+        self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).float().eval()
+        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).float().train()
         if self.with_memory:
             self.memories_ongoing = torch.zeros([1, 2*self.memory_size], dtype=torch.float32)
             self.memories_inital = torch.zeros([1, 2*self.memory_size], dtype=torch.float32)
@@ -28,11 +29,6 @@ class AriaAC:
 
         self.optimizer = torch.optim.Adam(self.modT.parameters(), lr=opt_params["lr"])
 
-        self.saved_act_Logp = []
-        self.saved_values = []
-        self.saved_entropies = []
-        self.saved_msg_Logp = []
-        self.saved_hid_states = []
         self.saved_rewards = []
         self.saved_obs = []
         self.saved_downlink_msgs = []
@@ -54,8 +50,8 @@ class AriaAC:
 
         a_distrib = Categorical(torch.cat([action, 1-action], -1))
         m_distrib = Categorical(message)
-        a = torch.argmax(a_distrib.probs, dim=-1).int()
-        m = torch.argmax(m_distrib.probs, dim=-1).int()
+        a = a_distrib.sample()
+        m = m_distrib.sample()
         return a, m
     
     def select_actionTraing(self, obs, msg, last_state):
@@ -91,26 +87,26 @@ class AriaAC:
             value_loss = 0
             entropy_loss = 0
             last_state = self.memories_inital.detach()
-
+            saved_act_Logp = []
             for i in range(self.batch_size-1):
                 a_lp, m_lp, val, hid_state, entropy = self.select_actionTraing(self.saved_obs[i], self.saved_downlink_msgs[i], last_state)
                 last_state = hid_state
-                
+                saved_act_Logp.append(a_lp)
                 advantage = returns[i]-val.item()
                 policy_loss += -(a_lp + m_lp)*advantage.detach()        
                 value_loss += advantage.pow(2)
-                entropy_loss -= self.epsilon*entropy
-
+                entropy_loss += self.epsilon*entropy
+            self.memories_inital = last_state.detach()
             policy_loss /= self.batch_size
             value_loss /= self.batch_size
-            loss = policy_loss+ value_loss + entropy_loss
+            loss = policy_loss+ value_loss #+ entropy_loss
             loss.backward(retain_graph=True)
             self.optimizer.step()
-            mean_policy = torch.cat(self.saved_act_Logp, 0).exp().mean(dim=0)
+            mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
             rewards = np.copy(self.saved_rewards)
             self.reset_Buffer()
             self.batch_counter+=1
-            if self.batch_counter%100==0:
+            if self.batch_counter%30==0:
                 self.modI.load_state_dict(self.modI.state_dict())
             return np.round([policy_loss.item(), value_loss.item(), entropy_loss.item()], 2), rewards, mean_policy
         return None, None, None
@@ -122,16 +118,11 @@ class AriaAC:
             _R = r + self.gamma * _R
             Gs.insert(0, _R)
         if normalize==True:
-            return (Gs-np.mean(Gs))/np.std(Gs)
+            return (Gs-np.mean(Gs))/(np.std(Gs)+self.eps)
         return Gs
     
     
     def popBuffer(self):
-        self.saved_act_Logp[:-1] = self.saved_act_Logp[1:]
-        self.saved_values[:-1] = self.saved_values[1:]
-        self.saved_entropies[:-1] = self.saved_entropies[1:]
-        self.saved_msg_Logp[:-1] = self.saved_msg_Logp[1:]
-        self.saved_hid_states[:-1] = self.saved_hid_states[1:]
         self.saved_rewards[:-1] = self.saved_rewards[1:]
         self.saved_obs[:-1] = self.saved_obs[1:]
         self.saved_downlink_msgs[:-1] = self.saved_downlink_msgs[1:]
@@ -143,23 +134,12 @@ class AriaAC:
         self.saved_downlink_msgs.append(msg)
         self.saved_rewards.append(reward)
 
-    def pushBufferSelect(self, a_lp, m_lp, val, ent):
-        self.saved_act_Logp.append(a_lp)
-        self.saved_msg_Logp.append(m_lp)
-        self.saved_values.append(val)
-        self.saved_entropies.append(ent)
     def reset_Buffer(self):
-        self.memories[0] = self.memories[-1].detach()
-        self.memories[1:] = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32) for _ in range(self.batch_size)]
-        self.saved_act_Logp = []
-        self.saved_values = []
-        self.saved_entropies = []
-        self.saved_msg_Logp = []
         self.saved_hid_states = []
         self.saved_rewards = []
         self.saved_obs = []
         self.saved_downlink_msgs = []
-        self.batch_counter = 0
+        self.minibatch_counter = 0
 class lin_Mod(nn.Module):
     def __init__(self, sizes, sftmx = False):
         super(lin_Mod, self).__init__()
