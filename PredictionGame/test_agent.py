@@ -16,9 +16,9 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = 10000
-opt_params = {"lr":0.001, "training_loops":1, "batch_size":50, \
-              "replay_size":50, "gamma":0.999, "vocab_size":4, \
+epochs = 1000
+opt_params = {"lr":0.005, "training_loops":1, "batch_size":20, \
+              "replay_size":40, "gamma":0.999, "vocab_size":4, \
               "memory_size":8, "eps":0.01}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
@@ -56,8 +56,8 @@ def plot_preds(obsers, preds):
     return fig
 def get_images(obsers, preds):
     fig0 = plt.figure(0)
-    plt.plot(obsers[:, 0])
-    plt.plot(preds[:, 0])
+    plt.plot(obsers[-opt_params["batch_size"]:, 0])
+    plt.plot(preds[-opt_params["batch_size"]:, 0])
     plt.legend(['observations', 'predictions'])
     plt.title('Agent 0')
     plt.xlabel('Epoch')
@@ -65,8 +65,8 @@ def get_images(obsers, preds):
     im0 = PIL.Image.frombytes('RGB', fig0.canvas.get_width_height(),fig0.canvas.tostring_rgb())
     plt.close()
     fig1 = plt.figure(1)
-    plt.plot(obsers[:, 1])
-    plt.plot(preds[:, 1])
+    plt.plot(obsers[-opt_params["batch_size"]:, 1])
+    plt.plot(preds[-opt_params["batch_size"]:, 1])
     plt.legend(['observations', 'predictions'])
     plt.title('Agent 1')
     plt.xlabel('Epoch')

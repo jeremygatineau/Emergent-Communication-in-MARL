@@ -21,11 +21,9 @@ class AriaAC:
         self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).float().eval()
         self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).float().train()
         if self.with_memory:
-            self.memories_ongoing = torch.zeros([1, 2*self.memory_size], dtype=torch.float32)
-            self.memories_inital = torch.zeros([1, 2*self.memory_size], dtype=torch.float32)
+            self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32)]
         else:
-            self.memories_ongoing = None
-            self.memories_inital = None
+            self.memories = None
 
         self.optimizer = torch.optim.Adam(self.modT.parameters(), lr=opt_params["lr"])
 
@@ -43,13 +41,19 @@ class AriaAC:
         msg_t = torch.tensor([msg], dtype=torch.float32)
         
         if self.with_memory:
-            action, message, hid_state, _ = self.modI.forward(obs_t.float(), msg_t.float(), self.memories_ongoing)
-            self.memories_ongoing = hid_state.detach()
+            action, message, hid_state, _ = self.modI.forward(obs_t.float(), msg_t.float(), self.memories[-1])
+            
+            if len(self.saved_obs) <self.replay_size:
+                self.memories.append(hid_state.detach())
+            else:
+                self.memories[-1] = hid_state.detach()
         else:
             action, message, _, _ = self.modI.forward(obs_t.float(), msg_t.float(), None)
 
         a_distrib = Categorical(torch.cat([action, 1-action], -1))
         m_distrib = Categorical(message)
+        #a = torch.argmax(a_distrib.probs, axis=1)
+        #m = torch.argmax(m_distrib.probs, axis=1)
         a = a_distrib.sample()
         m = m_distrib.sample()
         return a, m
@@ -74,41 +78,46 @@ class AriaAC:
 
 
     def train_on_batch(self, state, reward):
-        #self.popBuffer()
+        if len(self.saved_obs)<self.replay_size:
+            self.pushBufferEpisode(state[0], state[1], reward)
+            self.minibatch_counter += 1
+            return None, None, None
+        self.popBuffer()
         self.pushBufferEpisode(state[0], state[1], reward)
         self.minibatch_counter += 1
         if self.minibatch_counter >= self.batch_size:
             
-            self.optimizer.zero_grad()
-            returns = self.getReturns(normalize=True)
-            returns = torch.tensor(returns)
-            rewards = torch.tensor(self.saved_rewards)
-            policy_loss = 0
-            value_loss = 0
-            entropy_loss = 0
-            last_state = self.memories_inital.detach()
-            saved_act_Logp = []
-            for i in range(self.batch_size-1):
-                a_lp, m_lp, val, hid_state, entropy = self.select_actionTraing(self.saved_obs[i], self.saved_downlink_msgs[i], last_state)
-                last_state = hid_state
-                saved_act_Logp.append(a_lp)
-                advantage = returns[i]-val.item()
-                policy_loss += -(a_lp + m_lp)*advantage.detach()        
-                value_loss += advantage.pow(2)
-                entropy_loss += self.epsilon*entropy
-            self.memories_inital = last_state.detach()
-            policy_loss /= self.batch_size
-            value_loss /= self.batch_size
-            loss = policy_loss+ value_loss #+ entropy_loss
-            loss.backward(retain_graph=True)
-            self.optimizer.step()
-            mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
-            rewards = np.copy(self.saved_rewards)
-            self.reset_Buffer()
+            for _ in range(self.training_loops):
+                self.optimizer.zero_grad()
+                i0 = np.random.randint(self.batch_size, self.replay_size)
+                returns = self.getReturns(normalize=False)
+                returns = torch.tensor(returns)
+                rewards = torch.tensor(self.saved_rewards)
+                policy_loss = 0
+                value_loss = 0
+                entropy_loss = 0
+                last_state = self.memories[i0-self.batch_size]
+                saved_act_Logp = []
+                
+                for i in range(self.batch_size-1):
+                    a_lp, m_lp, val, hid_state, entropy = self.select_actionTraing(self.saved_obs[i0+i-self.batch_size], self.saved_downlink_msgs[i0+i-self.batch_size], last_state)
+                    _, _, val_, _, _, = self.select_actionTraing(self.saved_obs[i0+i+1-self.batch_size], self.saved_downlink_msgs[i0+i+1-self.batch_size], hid_state)
+                    last_state = hid_state
+                    saved_act_Logp.append(a_lp)
+                    advantage = rewards[i0+i-self.batch_size]+self.gamma*val_.detach()-val
+                    policy_loss += -(a_lp + m_lp)*advantage.detach()        
+                    value_loss += advantage.pow(2)
+                    entropy_loss += self.epsilon*entropy
+                loss = (policy_loss + value_loss)/self.batch_size
+                loss.backward(retain_graph=True)
+                self.optimizer.step()
+                mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
+                rewards = np.copy(self.saved_rewards)
             self.batch_counter+=1
-            if self.batch_counter%30==0:
-                self.modI.load_state_dict(self.modI.state_dict())
-            return np.round([policy_loss.item(), value_loss.item(), entropy_loss.item()], 2), rewards, mean_policy
+            self.minibatch_counter = 0
+            if self.batch_counter%1==0:
+                self.modI.load_state_dict(self.modT.state_dict())
+            return np.round([policy_loss.item()/self.batch_size, value_loss.item()/self.batch_size, entropy_loss.item()/self.batch_size], 4), rewards, mean_policy
         return None, None, None
 
     def getReturns(self, normalize=False):
@@ -126,13 +135,17 @@ class AriaAC:
         self.saved_rewards[:-1] = self.saved_rewards[1:]
         self.saved_obs[:-1] = self.saved_obs[1:]
         self.saved_downlink_msgs[:-1] = self.saved_downlink_msgs[1:]
-    def sampleBatch(self):
-        indices = np.random.randint(0, self.replay_size, self.batch_size)
-        return indices
+        self.memories[:-1] = self.memories[1:]
+    
     def pushBufferEpisode(self, obs, msg, reward):
-        self.saved_obs.append(obs)
-        self.saved_downlink_msgs.append(msg)
-        self.saved_rewards.append(reward)
+        if len(self.saved_obs) <self.replay_size:
+            self.saved_obs.append(obs)
+            self.saved_downlink_msgs.append(msg)
+            self.saved_rewards.append(reward)
+        else:
+            self.saved_obs[-1] = obs
+            self.saved_downlink_msgs[-1] = msg
+            self.saved_rewards[-1] = reward
 
     def reset_Buffer(self):
         self.saved_hid_states = []
