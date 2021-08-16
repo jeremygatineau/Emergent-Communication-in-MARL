@@ -18,15 +18,16 @@ class AriaAC:
         self.eps = np.finfo(np.float32).eps.item()
         self.with_memory = with_memory
         
-        self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).float().eval()
-        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, with_memory=self.with_memory).float().train()
+        self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
+        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
         if self.with_memory:
             self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32)]
         else:
             self.memories = None
 
         self.optimizer = torch.optim.Adam(self.modT.parameters(), lr=opt_params["lr"])
-
+        self.saved_a_lp = []
+        self.saved_m_lp = []
         self.saved_rewards = []
         self.saved_obs = []
         self.saved_downlink_msgs = []
@@ -56,6 +57,8 @@ class AriaAC:
         #m = torch.argmax(m_distrib.probs, axis=1)
         a = a_distrib.sample()
         m = m_distrib.sample()
+        self.saved_a_lp.append(torch.cat([action, 1-action], -1))
+        self.saved_m_lp.append(message)
         return a, m
     
     def select_actionTraing(self, obs, msg, last_state):
@@ -74,10 +77,10 @@ class AriaAC:
         m = m_distrib.sample()
         a_entropy = a_distrib.entropy() 
         m_entropy = m_distrib.entropy()
-        return a_distrib.log_prob(a), m_distrib.log_prob(m), value, hid_state, a_entropy + m_entropy
+        return a_distrib.log_prob(a), m_distrib.log_prob(m), value, hid_state, a_entropy + m_entropy, a_distrib.probs, m_distrib.probs
 
 
-    def train_on_batch(self, state, reward):
+    def train_on_batch(self, state, reward):    
         if len(self.saved_obs)<self.replay_size:
             self.pushBufferEpisode(state[0], state[1], reward)
             self.minibatch_counter += 1
@@ -89,8 +92,8 @@ class AriaAC:
             
             for _ in range(self.training_loops):
                 self.optimizer.zero_grad()
-                i0 = np.random.randint(self.batch_size, self.replay_size)
-                returns = self.getReturns(normalize=False)
+                i0 = np.random.randint(self.batch_size-1, self.replay_size)
+                returns = self.getReturns(normalize=True)
                 returns = torch.tensor(returns)
                 rewards = torch.tensor(self.saved_rewards)
                 policy_loss = 0
@@ -98,16 +101,38 @@ class AriaAC:
                 entropy_loss = 0
                 last_state = self.memories[i0-self.batch_size]
                 saved_act_Logp = []
-                
+               
                 for i in range(self.batch_size-1):
-                    a_lp, m_lp, val, hid_state, entropy = self.select_actionTraing(self.saved_obs[i0+i-self.batch_size], self.saved_downlink_msgs[i0+i-self.batch_size], last_state)
-                    _, _, val_, _, _, = self.select_actionTraing(self.saved_obs[i0+i+1-self.batch_size], self.saved_downlink_msgs[i0+i+1-self.batch_size], hid_state)
+                    obs_t = torch.tensor([self.saved_obs[i0+i-self.batch_size]], dtype=torch.float32)
+                    msg_t = torch.tensor([self.saved_downlink_msgs[i0+i-self.batch_size]], dtype=torch.float32)
+                    
+                    if self.with_memory:
+                        action, message, hid_state, val = self.modT.forward(obs_t.float(), msg_t.float(), last_state)
+                    else:
+                        action, message, _, val = self.modT.forward(obs_t.float(), msg_t.float(), None)
+                    
+                    a_distrib = Categorical(torch.cat([action, 1-action], -1))
+                    m_distrib = Categorical(message)
+                    a = a_distrib.sample()
+                    m = m_distrib.sample()
+                    a_entropy = a_distrib.entropy() 
+                    m_entropy = m_distrib.entropy()
                     last_state = hid_state
-                    saved_act_Logp.append(a_lp)
-                    advantage = rewards[i0+i-self.batch_size]+self.gamma*val_.detach()-val
-                    policy_loss += -(a_lp + m_lp)*advantage.detach()        
+                    saved_act_Logp.append(a_distrib.log_prob(a))
+                    Bi_a = self.saved_a_lp[i0+i-self.batch_size][0]
+                    Fi_a = nn.functional.gumbel_softmax(torch.cat([action, 1-action], -1).log(), tau=5)[0]
+                    
+                    rho_a = torch.clamp(Fi_a[a]/Bi_a[a], min=0, max=1).detach()
+
+                    Bi_m= self.saved_m_lp[i0+i-self.batch_size][0]
+                    Fi_m = nn.functional.gumbel_softmax(message.log(), tau=5)[0]
+                   
+                    rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=20).detach()
+
+                    advantage = returns[i0+i-self.batch_size]-val
+                    policy_loss += -(Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()     
                     value_loss += advantage.pow(2)
-                    entropy_loss += self.epsilon*entropy
+                    entropy_loss += self.epsilon*(a_entropy+m_entropy)
                 loss = (policy_loss + value_loss)/self.batch_size
                 loss.backward(retain_graph=True)
                 self.optimizer.step()
@@ -115,7 +140,7 @@ class AriaAC:
                 rewards = np.copy(self.saved_rewards)
             self.batch_counter+=1
             self.minibatch_counter = 0
-            if self.batch_counter%1==0:
+            if self.batch_counter%5==0:
                 self.modI.load_state_dict(self.modT.state_dict())
             return np.round([policy_loss.item()/self.batch_size, value_loss.item()/self.batch_size, entropy_loss.item()/self.batch_size], 4), rewards, mean_policy
         return None, None, None
@@ -123,7 +148,7 @@ class AriaAC:
     def getReturns(self, normalize=False):
         _R = 0
         Gs = []
-        for r in self.saved_rewards[:self.batch_size]:
+        for r in self.saved_rewards:
             _R = r + self.gamma * _R
             Gs.insert(0, _R)
         if normalize==True:
@@ -132,6 +157,8 @@ class AriaAC:
     
     
     def popBuffer(self):
+        self.saved_a_lp[:-1] = self.saved_a_lp[1:]
+        self.saved_m_lp[:-1] = self.saved_m_lp[1:]
         self.saved_rewards[:-1] = self.saved_rewards[1:]
         self.saved_obs[:-1] = self.saved_obs[1:]
         self.saved_downlink_msgs[:-1] = self.saved_downlink_msgs[1:]
@@ -148,6 +175,8 @@ class AriaAC:
             self.saved_rewards[-1] = reward
 
     def reset_Buffer(self):
+        self.saved_a_lp = []
+        self.saved_m_lp = []
         self.saved_hid_states = []
         self.saved_rewards = []
         self.saved_obs = []
@@ -173,7 +202,7 @@ class lin_Mod(nn.Module):
             x_ = m(x_)
         return x_
 class ariaModel(nn.Module):
-    def __init__(self, batch_size, vocabulary_size, hidden_dim=8, memory_size=8, with_memory=True):
+    def __init__(self, batch_size, vocabulary_size, hidden_dim=10, memory_size=8, with_memory=True):
         super(ariaModel, self).__init__()
         self.hiddenDim = hidden_dim
         self.memory_size = memory_size

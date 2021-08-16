@@ -59,6 +59,7 @@ class OneDfield():
         self.channels_propagation_dirs = channels_propagation_dirs
         self.agent_idxs = np.floor(self.n_discrete*self.agent_positions).astype(int)
     def _generatorFunction(self, hidden_var=None):
+        return (1, 1)
         if self.gen_fct_state[0]>0 and self.gen_fct_state[1]==0:
             self.gen_fct_state[0] -= 1
             return (1, 1)

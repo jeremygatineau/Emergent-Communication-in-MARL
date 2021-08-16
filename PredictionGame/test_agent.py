@@ -17,9 +17,9 @@ matplotlib.use('Agg')
 
 
 epochs = 1000
-opt_params = {"lr":0.005, "training_loops":1, "batch_size":20, \
-              "replay_size":40, "gamma":0.999, "vocab_size":4, \
-              "memory_size":8, "eps":0.01}
+opt_params = {"lr":0.001, "training_loops":1, "batch_size":50, \
+              "replay_size": 50, "gamma":0.99, "vocab_size":4, \
+              "memory_size":8, "eps":0.0005}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
@@ -85,8 +85,8 @@ observations = []
 predictions = []
 while epoch<epochs:
     
-    a0, m0u =  agent0.select_action(obs[0], downlink_msgs[0])
-    a1, m1u = agent1.select_action(obs[1], downlink_msgs[1])
+    a0, m0u=  agent0.select_action(obs[0], downlink_msgs[0])
+    a1, m1u= agent1.select_action(obs[1], downlink_msgs[1])
     mu_ = np.zeros((2, opt_params["vocab_size"]))
     mu_[0, m0u.item()] = 1
     mu_[1, m1u.item()] = 1
