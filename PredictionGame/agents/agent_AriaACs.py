@@ -5,7 +5,7 @@ import numpy as np
 from torch.distributions import Categorical
 import torch.nn.utils as utils
 from torch.autograd import Variable
-class AriaAC:
+class AriaACs:
     def __init__(self,opt_params, with_memory=True, aidi=None):
         self.aidi = aidi
         self.batch_size = opt_params["batch_size"]
@@ -18,14 +18,21 @@ class AriaAC:
         self.eps = np.finfo(np.float32).eps.item()
         self.with_memory = with_memory
         
-        self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
-        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
-        if self.with_memory:
-            self.memories = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32)]
-        else:
-            self.memories = None
+        self.modIActor = ariaActor(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
+        self.modTActor = ariaActor(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
+        self.modTCritic = ariaCritic(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
 
-        self.optimizer = torch.optim.Adam(self.modT.parameters(), lr=opt_params["lr"])
+        if self.with_memory:
+            self.memoriesActor = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32)]
+            self.memoriesCritic = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32)]
+
+        else:
+            self.memoriesActor = None
+            self.memoriesCritic = None
+
+        self.optimizerActor = torch.optim.Adam(self.modTActor.parameters(), lr=opt_params["lr"])
+        self.optimizerCritic = torch.optim.Adam(self.modTCritic.parameters(), lr=opt_params["lr"])
+
         self.saved_a_lp = []
         self.saved_m_lp = []
         self.saved_rewards = []
@@ -42,14 +49,16 @@ class AriaAC:
         msg_t = torch.tensor([msg], dtype=torch.float32)
         
         if self.with_memory:
-            action, message, hid_state, _ = self.modI.forward(obs_t.float(), msg_t.float(), self.memories[-1])
-            
+            action, message, hid_state = self.modIActor.forward(obs_t.float(), msg_t.float(), self.memoriesActor[-1])
+            hid_state_critic, _ = self.modTCritic.forward(obs_t.float(), msg_t.float(), self.memoriesCritic[-1], action, message)
             if len(self.saved_obs) <self.replay_size:
-                self.memories.append(hid_state.detach())
+                self.memoriesActor.append(hid_state.detach())
+                self.memoriesCritic.append(hid_state.detach())
             else:
-                self.memories[-1] = hid_state.detach()
+                self.memoriesActor[-1] = hid_state.detach()
+                self.memoriesCritic[-1] = hid_state_critic.detach()
         else:
-            action, message, _, _ = self.modI.forward(obs_t.float(), msg_t.float(), None)
+            action, message, _, = self.modIActor.forward(obs_t.float(), msg_t.float(), None)
 
         a_distrib = Categorical(torch.cat([action, 1-action], -1))
         m_distrib = Categorical(message)
@@ -67,9 +76,9 @@ class AriaAC:
         msg_t = torch.tensor([msg], dtype=torch.float32)
         
         if self.with_memory:
-            action, message, hid_state, value = self.modT.forward(obs_t.float(), msg_t.float(), last_state)
+            action, message, hid_state = self.modTActor.forward(obs_t.float(), msg_t.float(), last_state)
         else:
-            action, message, _, value = self.modT.forward(obs_t.float(), msg_t.float(), None)
+            action, message, _ = self.modTActor.forward(obs_t.float(), msg_t.float(), None)
         
         a_distrib = Categorical(torch.cat([action, 1-action], -1))
         m_distrib = Categorical(message)
@@ -77,7 +86,7 @@ class AriaAC:
         m = m_distrib.sample()
         a_entropy = a_distrib.entropy() 
         m_entropy = m_distrib.entropy()
-        return a_distrib.log_prob(a), m_distrib.log_prob(m), value, hid_state, a_entropy + m_entropy, a_distrib.probs, m_distrib.probs
+        return a_distrib.log_prob(a), m_distrib.log_prob(m), hid_state, a_entropy + m_entropy, a_distrib.probs, m_distrib.probs
 
 
     def train_on_batch(self, state, reward):    
@@ -91,7 +100,8 @@ class AriaAC:
         if self.minibatch_counter >= self.batch_size:
             
             for _ in range(self.training_loops):
-                self.optimizer.zero_grad()
+                self.optimizerActor.zero_grad()
+                self.optimizerCritic.zero_grad()
                 i0 = np.random.randint(self.batch_size, self.replay_size)
                 returns = self.getReturns(self.saved_rewards[i0-self.batch_size:i0], normalize=False)
                 returns = torch.tensor(returns, dtype=torch.float32)
@@ -100,7 +110,8 @@ class AriaAC:
                 policy_loss = 0
                 value_loss = torch.tensor(0, dtype=torch.float32)
                 entropy_loss = 0
-                last_state = self.memories[i0-self.batch_size]
+                last_state_actor = self.memoriesActor[i0-self.batch_size]
+                last_state_critic = self.memoriesActor[i0-self.batch_size]
                 saved_act_Logp = []
                
                 for i in range(self.batch_size-1):
@@ -110,10 +121,10 @@ class AriaAC:
                     msg_t_ = torch.tensor([self.saved_downlink_msgs[i0+i+1-self.batch_size]], dtype=torch.float32)
                     
                     if self.with_memory:
-                        action, message, hid_state, val = self.modT.forward(obs_t.float(), msg_t.float(), last_state)
+                        action, message, hid_state_actor = self.modTActor.forward(obs_t.float(), msg_t.float(), last_state_actor)
+                        hid_state_critic, val = self.modTCritic.forward(obs_t.float(), msg_t.float(), last_state_critic, action, message)
                     else:
-                        action, message, _, val = self.modT.forward(obs_t.float(), msg_t.float(), None)
-                    _, _, _, val_ = self.modT.forward(obs_t_.float(), msg_t_.float(), hid_state)
+                        action, message, _ = self.modTActor.forward(obs_t.float(), msg_t.float(), None)
 
                     a_distrib = Categorical(torch.cat([action, 1-action], -1))
                     m_distrib = Categorical(message)
@@ -121,7 +132,8 @@ class AriaAC:
                     m = m_distrib.sample()
                     a_entropy = a_distrib.entropy() 
                     m_entropy = m_distrib.entropy()
-                    last_state = hid_state
+                    last_state_actor = hid_state_actor
+                    last_state_critic = hid_state_critic
                     a_lp = a_distrib.log_prob(a)
                     m_lp = m_distrib.log_prob(m)
                     saved_act_Logp.append(a_lp)
@@ -135,22 +147,26 @@ class AriaAC:
                    
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
                     advantage = returns[i]-val
-                    policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
+                    policy_loss += (Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -(Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
                     #policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
                     
                     value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
                     entropy_loss += self.epsilon*(a_entropy+m_entropy)
-                loss = (policy_loss + value_loss)/self.batch_size
-                loss.backward(retain_graph=True)
-                self.optimizer.step()
+                policy_loss /=self.batch_size
+                policy_loss.backward(retain_graph=True)
+                value_loss /= self.batch_size
+                value_loss.backward(retain_graph=True)
+
+                self.optimizerActor.step()
+                self.optimizerCritic.step()
                 mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
                 rewards = np.copy(self.saved_rewards)
             self.batch_counter+=1
             self.minibatch_counter = 0
             if self.batch_counter%1==0:
-                self.modI.load_state_dict(self.modT.state_dict())
+                self.modIActor.load_state_dict(self.modTActor.state_dict())
             return np.round([policy_loss.item()/self.batch_size, value_loss.item()/self.batch_size, entropy_loss.item()/self.batch_size], 4), rewards, mean_policy
         return None, None, None
 
@@ -171,7 +187,8 @@ class AriaAC:
         self.saved_rewards[:-1] = self.saved_rewards[1:]
         self.saved_obs[:-1] = self.saved_obs[1:]
         self.saved_downlink_msgs[:-1] = self.saved_downlink_msgs[1:]
-        self.memories[:-1] = self.memories[1:]
+        self.memoriesActor[:-1] = self.memoriesActor[1:]
+        self.memoriesCritic[:-1] = self.memoriesCritic[1:]
     
     def pushBufferEpisode(self, obs, msg, reward):
         if len(self.saved_obs) <self.replay_size:
@@ -210,9 +227,9 @@ class lin_Mod(nn.Module):
         for m in self.mod:
             x_ = m(x_)
         return x_
-class ariaModel(nn.Module):
+class ariaActor(nn.Module):
     def __init__(self, batch_size, vocabulary_size, hidden_dim=10, memory_size=8, with_memory=True):
-        super(ariaModel, self).__init__()
+        super(ariaActor, self).__init__()
         self.hiddenDim = hidden_dim
         self.memory_size = memory_size
         self.with_memory = with_memory
@@ -225,11 +242,9 @@ class ariaModel(nn.Module):
             self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
             self.action_Mod = nn.Sequential(lin_Mod([self.memory_size, 1], sftmx = False), nn.Sigmoid())
             self.msg_Dec = lin_Mod([self.memory_size, self.memory_size, self.vocabulary_size], sftmx=True)
-            self.value_head = lin_Mod([self.memory_size, self.memory_size, 1])
         else : 
             self.memory = None
             self.action_Mod = lin_Mod([self.hiddenDim, 1], sftmx = True)
-            self.value_head = lin_Mod([self.hiddenDim, 1])
        
     def forward(self, obs, msg, memory):
         o = self.obs_Mod(obs)
@@ -244,5 +259,39 @@ class ariaModel(nn.Module):
             out_memory = None
         action = self.action_Mod(hz)
         message = self.msg_Dec(hz)
+        return action, message, out_memory
+
+class ariaCritic(nn.Module):
+    def __init__(self, batch_size, vocabulary_size, hidden_dim=10, memory_size=8, with_memory=True):
+        super(ariaCritic, self).__init__()
+        self.hiddenDim = hidden_dim
+        self.memory_size = memory_size
+        self.with_memory = with_memory
+        self.batch_size = batch_size
+        self.vocabulary_size = vocabulary_size
+        self.act_enc = lin_Mod([1 + self.vocabulary_size, self.hiddenDim])
+        self.obs_Mod = lin_Mod([2, self.hiddenDim])
+        self.msg_Enc = lin_Mod([4, self.hiddenDim//2, self.hiddenDim], sftmx = False)
+        self.rep_Mod = lin_Mod([self.hiddenDim*3, self.hiddenDim])
+        if self.with_memory:
+            self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
+            self.value_head = lin_Mod([self.memory_size, self.memory_size, 1])
+        else : 
+            self.memory = None
+            self.value_head = lin_Mod([self.hiddenDim, 1])
+       
+    def forward(self, obs, dl_msg, memory, action, ul_msg):
+        o = self.obs_Mod(obs)
+        m = self.msg_Enc(dl_msg)
+        act = self.act_enc(torch.cat([action, ul_msg], -1))
+        z = self.rep_Mod(torch.cat([o, m, act], -1))
+        if self.with_memory:
+            hz, cz = self.memory(z, (memory[:, :self.memory_size], memory[:, self.memory_size:]))
+            
+            out_memory = torch.cat([hz, cz], dim=1)
+        else:
+            hz = z
+            out_memory = None
         value = self.value_head(hz)
-        return action, message, out_memory, value
+        return out_memory, value
+
