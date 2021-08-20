@@ -16,8 +16,8 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = 1000à
-opt_params = {"lr":0.0005, "training_loops":3, "batch_size":50, \
+epochs = 10000
+opt_params = {"lr":0.001, "training_loops":1, "batch_size":50, \
               "replay_size": 2500, "gamma":0.99, "vocab_size":4, \
               "memory_size":8, "eps":0.001}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')

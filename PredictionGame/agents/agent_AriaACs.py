@@ -20,7 +20,8 @@ class AriaACs:
         
         self.modIActor = ariaActor(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
         self.modTActor = ariaActor(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
-        self.modTCritic = ariaCritic(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
+        self.modTCritic = Baseline()
+        #ariaCritic(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
 
         if self.with_memory:
             self.memoriesActor = [torch.zeros([1, 2*self.memory_size], dtype=torch.float32)]
@@ -30,8 +31,13 @@ class AriaACs:
             self.memoriesActor = None
             self.memoriesCritic = None
 
-        self.optimizerActor = torch.optim.Adam(self.modTActor.parameters(), lr=opt_params["lr"])
-        self.optimizerCritic = torch.optim.Adam(self.modTCritic.parameters(), lr=opt_params["lr"])
+        #self.optimizerActor = torch.optim.Adam(self.modTActor.parameters(), lr=opt_params["lr"])
+        #self.optimizerCritic = torch.optim.Adam(self.modTCritic.parameters(), lr=opt_params["lr"])
+
+        self.optimizerActor = torch.optim.RMSprop(self.modTActor.parameters(), lr=opt_params["lr"])
+        self.optimizerCritic = torch.optim.RMSprop(self.modTCritic.parameters(), lr=opt_params["lr"])
+
+        
 
         self.saved_a_lp = []
         self.saved_m_lp = []
@@ -50,13 +56,13 @@ class AriaACs:
         
         if self.with_memory:
             action, message, hid_state = self.modIActor.forward(obs_t.float(), msg_t.float(), self.memoriesActor[-1])
-            hid_state_critic, _ = self.modTCritic.forward(obs_t.float(), msg_t.float(), self.memoriesCritic[-1], action, message)
+            #hid_state_critic, _ = self.modTCritic.forward(obs_t.float(), msg_t.float(), self.memoriesCritic[-1], action, message)
             if len(self.saved_obs) <self.replay_size:
                 self.memoriesActor.append(hid_state.detach())
-                self.memoriesCritic.append(hid_state.detach())
+                #self.memoriesCritic.append(hid_state_critic.detach())
             else:
                 self.memoriesActor[-1] = hid_state.detach()
-                self.memoriesCritic[-1] = hid_state_critic.detach()
+                #self.memoriesCritic[-1] = hid_state_critic.detach()
         else:
             action, message, _, = self.modIActor.forward(obs_t.float(), msg_t.float(), None)
 
@@ -106,7 +112,7 @@ class AriaACs:
                 returns = self.getReturns(self.saved_rewards[i0-self.batch_size:i0], normalize=False)
                 returns = torch.tensor(returns, dtype=torch.float32)
                 rewards = torch.tensor(self.saved_rewards[i0-self.batch_size:i0], dtype=torch.float32)
-                rewards -= rewards.mean()
+                #rewards -= rewards.mean()
                 policy_loss = 0
                 value_loss = torch.tensor(0, dtype=torch.float32)
                 entropy_loss = 0
@@ -122,7 +128,7 @@ class AriaACs:
                     
                     if self.with_memory:
                         action, message, hid_state_actor = self.modTActor.forward(obs_t.float(), msg_t.float(), last_state_actor)
-                        hid_state_critic, val = self.modTCritic.forward(obs_t.float(), msg_t.float(), last_state_critic, action, message)
+                        #hid_state_critic, val = self.modTCritic.forward(obs_t.float(), msg_t.float(), last_state_critic, action, message)
                     else:
                         action, message, _ = self.modTActor.forward(obs_t.float(), msg_t.float(), None)
 
@@ -133,7 +139,7 @@ class AriaACs:
                     a_entropy = a_distrib.entropy() 
                     m_entropy = m_distrib.entropy()
                     last_state_actor = hid_state_actor
-                    last_state_critic = hid_state_critic
+                    #last_state_critic = hid_state_critic
                     a_lp = a_distrib.log_prob(a)
                     m_lp = m_distrib.log_prob(m)
                     saved_act_Logp.append(a_lp)
@@ -146,19 +152,22 @@ class AriaACs:
                     Fi_m = nn.functional.gumbel_softmax(message.log(), tau=1)[0]
                    
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
-                    advantage = returns[i]-val
-                    policy_loss += (Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
+                    bsl = self.modTCritic(1)
+                    advantage = rewards[i]-bsl
+                    #policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -(Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
-                    #policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
+                    policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
-                    
-                    value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
+                    bsl_loss = nn.functional.mse_loss(self.modTCritic(1), rewards[i].reshape(bsl.shape))
+                    #value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
                     entropy_loss += self.epsilon*(a_entropy+m_entropy)
                 policy_loss /=self.batch_size
                 policy_loss.backward(retain_graph=True)
-                value_loss /= self.batch_size
-                value_loss.backward(retain_graph=True)
-
+ 
+                bsl_loss.backward(retain_graph=True)
+                
+                self.grad_clamp(self.modTActor.parameters(), 0.1)
+                self.grad_clamp(self.modTCritic.parameters(), 0.1)
                 self.optimizerActor.step()
                 self.optimizerCritic.step()
                 mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
@@ -169,6 +178,11 @@ class AriaACs:
                 self.modIActor.load_state_dict(self.modTActor.state_dict())
             return np.round([policy_loss.item()/self.batch_size, value_loss.item()/self.batch_size, entropy_loss.item()/self.batch_size], 4), rewards, mean_policy
         return None, None, None
+    def grad_clamp(self, parameters, clip=0.1):
+        for p in parameters:
+            if p.grad is not None:
+                p.grad.clamp_(min=-clip)
+                p.grad.clamp_(max=clip)
 
     def getReturns(self, rewards, normalize=False):
         _R = 0
@@ -261,6 +275,14 @@ class ariaActor(nn.Module):
         message = self.msg_Dec(hz)
         return action, message, out_memory
 
+class Baseline(nn.Module):
+    
+    def __init__(self):
+        super(Baseline, self).__init__()
+        self.bias = nn.Parameter(torch.ones(1))
+    def forward(self, bs):
+        batch_bias = (self.bias + 1.).expand(bs,1)
+        return batch_bias
 class ariaCritic(nn.Module):
     def __init__(self, batch_size, vocabulary_size, hidden_dim=10, memory_size=8, with_memory=True):
         super(ariaCritic, self).__init__()
