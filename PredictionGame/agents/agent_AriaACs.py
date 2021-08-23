@@ -140,7 +140,7 @@ class AriaACs:
                     a_entropy = a_distrib.entropy() 
                     m_entropy = m_distrib.entropy()
                     last_state_actor = hid_state_actor
-                    #last_state_critic = hid_state_critic
+                    last_state_critic = hid_state_critic
                     a_lp = a_distrib.log_prob(a)
                     m_lp = m_distrib.log_prob(m)
                     saved_act_Logp.append(torch.log(action))
@@ -155,7 +155,7 @@ class AriaACs:
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
                     #bsl = self.modTCritic(1)
                     #advantage = rewards[i]-bsl
-                    advantage = rewards[i]-val #+ self.gamma*val_.detach()
+                    advantage = rewards[i]-val + self.gamma*val_
                     #policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -( Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
                     policy_loss += -(a_lp)*advantage.detach()  # straight AC
