@@ -112,7 +112,7 @@ class AriaACs:
                 returns = self.getReturns(self.saved_rewards[i0-self.batch_size:i0], normalize=False)
                 returns = torch.tensor(returns, dtype=torch.float32)
                 rewards = torch.tensor(self.saved_rewards[i0-self.batch_size:i0], dtype=torch.float32)
-                #rewards -= rewards.mean()
+                rewards -= rewards.mean()
                 policy_loss = 0
                 value_loss = torch.tensor(0, dtype=torch.float32)
                 entropy_loss = 0
