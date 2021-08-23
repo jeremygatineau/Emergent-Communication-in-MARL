@@ -140,10 +140,13 @@ class AriaAC:
                     #policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
                     
-                    value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
+                    #value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
+                    value_loss += advantage.pow(2).mean()
                     entropy_loss += self.epsilon*(a_entropy+m_entropy)
+                
                 loss = (policy_loss + value_loss)/self.batch_size
                 loss.backward(retain_graph=True)
+                utils.clip_grad_norm_(self.modT.parameters(), 0.1)
                 self.optimizer.step()
                 mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
                 rewards = np.copy(self.saved_rewards)
