@@ -94,8 +94,8 @@ while epoch<epochs:
     predictions.append((a0.item(), a1.item()))
     (obs_, downlink_msgs_), r, done = Task.step([a0.item(), a1.item()], [mu_[0], mu_[1]])
     observations.append([obs_[0][1], obs_[1][0]])
-    loss0, rew0, mean_policy0 = agent0.train_on_batch([obs[0], downlink_msgs[0]], r[0])
-    loss1, rew1, mean_policy1 = agent1.train_on_batch([obs[1], downlink_msgs[1]], r[1])
+    loss0, rew0, mean_policy0 = agent0.train_on_batch([obs[0], Task.initMsgs[0]], r[0])
+    loss1, rew1, mean_policy1 = agent1.train_on_batch([obs[1], Task.initMsgs[1]], r[1])
     obs = obs_
     downlink_msgs = downlink_msgs_
     if loss0 is not None:
