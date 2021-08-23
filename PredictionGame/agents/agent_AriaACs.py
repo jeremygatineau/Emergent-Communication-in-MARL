@@ -155,14 +155,14 @@ class AriaACs:
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
                     #bsl = self.modTCritic(1)
                     #advantage = rewards[i]-bsl
-                    advantage = rewards[i]-val + self.gamma*val_.detach()
+                    advantage = rewards[i]-val #+ self.gamma*val_.detach()
                     #policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -( Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
                     policy_loss += -(a_lp)*advantage.detach()  # straight AC
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
                     #bsl_loss = nn.functional.mse_loss(self.modTCritic(1), rewards[i].reshape(bsl.shape))
-                    #value_loss += advantage.pow(2).mean()
-                    value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
+                    value_loss += advantage.pow(2).mean()
+                    #value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
                     entropy_loss += self.epsilon*(a_entropy+m_entropy)
                 policy_loss /=self.batch_size
                 value_loss /=self.batch_size
