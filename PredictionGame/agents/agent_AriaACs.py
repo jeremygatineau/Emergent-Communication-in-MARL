@@ -162,7 +162,7 @@ class AriaACs:
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
                     #bsl_loss = nn.functional.mse_loss(self.modTCritic(1), rewards[i].reshape(bsl.shape))
                     value_loss += advantage.pow(2).mean()
-                    value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
+                    #value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
                     entropy_loss += self.epsilon*(a_entropy+m_entropy)
                 policy_loss /=self.batch_size
                 value_loss /=self.batch_size
