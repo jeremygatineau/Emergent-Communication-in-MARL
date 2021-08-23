@@ -128,9 +128,10 @@ class AriaACs:
                     
                     if self.with_memory:
                         action, message, hid_state_actor = self.modTActor.forward(obs_t.float(), msg_t.float(), last_state_actor)
-                        #hid_state_critic, val = self.modTCritic.forward(obs_t.float(), msg_t.float(), last_state_critic, action, message)
+                        hid_state_critic, val = self.modTCritic.forward(obs_t.float(), msg_t.float(), last_state_critic, action, message)
                     else:
                         action, message, _ = self.modTActor.forward(obs_t.float(), msg_t.float(), None)
+                    _, val_ = self.modTCritic.forward(obs_t_.float(), msg_t_.float(), hid_state_critic, action, message)
 
                     a_distrib = Categorical(torch.cat([action, 1-action], -1))
                     m_distrib = Categorical(message)
