@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from oneDtoyTask.oneDtoyTask import ToyTask, OneDfield, TwoWayComChannel
 from agents.agent_AriaRE import AriaRE
-from agents.agent_AriaAC import AriaACs
+from agents.agent_AriaACs import AriaACs
 from IPython import display
 import wandb
 import PIL
