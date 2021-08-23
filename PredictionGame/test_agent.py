@@ -28,7 +28,7 @@ np.random.seed(1)
 field = OneDfield(speed=1)
 Task = ToyTask(field=field, observationMappingFct=lambda x: (x>0.5).astype(int), comChannel=TwoWayComChannel())
 
-wandb.watch((agent0.modT, agent1.modT), log="all", log_freq=5)
+wandb.watch((agent0.modTActor, agent1.modTActor), log="all", log_freq=5)
 table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
 run.log({"Batch Predictions": table})
 # %%
