@@ -113,7 +113,7 @@ class AriaAC:
                         action, message, hid_state, val = self.modT.forward(obs_t.float(), msg_t.float(), last_state)
                     else:
                         action, message, _, val = self.modT.forward(obs_t.float(), msg_t.float(), None)
-                    _, _, _, val_ = self.modT.forward(obs_t_.float(), msg_t_.float(), hid_state)
+                    #_, _, _, val_ = self.modT.forward(obs_t_.float(), msg_t_.float(), hid_state)
 
                     a_distrib = Categorical(torch.cat([action, 1-action], -1))
                     m_distrib = Categorical(message)
@@ -134,10 +134,10 @@ class AriaAC:
                     Fi_m = nn.functional.gumbel_softmax(message.log(), tau=1)[0]
                    
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
-                    advantage = rewards[i]+self.gamma*val_-val
-                    policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
+                    advantage = rewards[i]-val # self.gamma*val_
+                    #policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -(Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
-                    #policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
+                    policy_loss += -(a_lp)*advantage.detach()  # straight AC
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
                     
                     #value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
@@ -146,7 +146,7 @@ class AriaAC:
                 
                 loss = (policy_loss + value_loss)/self.batch_size
                 loss.backward(retain_graph=True)
-                utils.clip_grad_norm_(self.modT.parameters(), 0.1)
+                #utils.clip_grad_norm_(self.modT.parameters(), 0.1)
                 self.optimizer.step()
                 mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
                 rewards = np.copy(self.saved_rewards)
