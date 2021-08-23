@@ -153,8 +153,9 @@ class AriaACs:
                     Fi_m = nn.functional.gumbel_softmax(message.log(), tau=1)[0]
                    
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
-                    bsl = self.modTCritic(1)
-                    advantage = rewards[i]-bsl
+                    #bsl = self.modTCritic(1)
+                    #advantage = rewards[i]-bsl
+                    advantage = rewards[i]-val + self.gamma*val
                     #policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -( Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
                     policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
