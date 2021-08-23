@@ -160,13 +160,13 @@ class AriaACs:
                     #policy_loss += -( Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
                     policy_loss += -(a_lp+m_lp)*advantage.detach()  # straight AC
                     #policy_loss += -(a_lp+m_lp)*returns[i] # reinforce no baseline
-                    bsl_loss = nn.functional.mse_loss(self.modTCritic(1), rewards[i].reshape(bsl.shape))
-                    #value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
+                    #bsl_loss = nn.functional.mse_loss(self.modTCritic(1), rewards[i].reshape(bsl.shape))
+                    value_loss += nn.functional.smooth_l1_loss(val, returns[i].reshape([1, 1])) # advantage.pow(2)
                     entropy_loss += self.epsilon*(a_entropy+m_entropy)
                 policy_loss /=self.batch_size
-                policy_loss.backward(retain_graph=True)
- 
-                bsl_loss.backward(retain_graph=True)
+                value_loss /=self.batch_size
+                loss = policy_loss + value_loss #+ entropy_loss
+                loss.backward(retain_graph=True)
                 
                 self.grad_clamp(self.modTActor.parameters(), 0.1)
                 self.grad_clamp(self.modTCritic.parameters(), 0.1)
