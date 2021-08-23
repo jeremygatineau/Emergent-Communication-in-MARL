@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from oneDtoyTask.oneDtoyTask import ToyTask, OneDfield, TwoWayComChannel
 from agents.agent_AriaRE import AriaRE
-from agents.agent_AriaAC import AriaAC
+from agents.agent_AriaAC import AriaACs
 from IPython import display
 import wandb
 import PIL
@@ -22,8 +22,8 @@ opt_params = {"lr":0.01, "training_loops":1, "batch_size":28, \
               "memory_size":8, "eps":0.001}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
-agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
-agent1 = AriaAC(opt_params=opt_params, with_memory=True, aidi=1)
+agent0 = AriaACs(opt_params=opt_params, with_memory=True, aidi=0)
+agent1 = AriaACs(opt_params=opt_params, with_memory=True, aidi=1)
 np.random.seed(1)
 field = OneDfield(speed=1)
 Task = ToyTask(field=field, observationMappingFct=lambda x: (x>0.5).astype(int), comChannel=TwoWayComChannel())
@@ -99,11 +99,7 @@ while epoch<epochs:
     obs = obs_
     downlink_msgs = downlink_msgs_
     if loss0 is not None:
-        if epoch==2 and (mean_policy0.item()-0.5 == 0. or mean_policy1.item()-0.5 == 0.):
-            epoch = 0
-            agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
-            agent1 = AriaAC(opt_params=opt_params, with_memory=True, aidi=1)
-            print('Mean policies not updating, try restarting')
+        
         wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
                    "entropy loss A0": loss0[2],"reward A0": np.mean(rew0), \
                    "policy loss A1": loss1[0], "value loss A1": loss1[1], \
