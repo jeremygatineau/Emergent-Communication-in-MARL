@@ -148,7 +148,7 @@ class AriaAC:
                 loss.backward(retain_graph=True)
                 utils.clip_grad_norm_(self.modT.parameters(), 0.1)
                 self.optimizer.step()
-                mean_policy = torch.cat(saved_act_Logp, 0).mean(dim=0)
+                mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
                 rewards = np.copy(self.saved_rewards)
             self.batch_counter+=1
             self.minibatch_counter = 0
