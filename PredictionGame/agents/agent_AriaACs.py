@@ -169,8 +169,8 @@ class AriaACs:
                 loss = policy_loss + value_loss #+ entropy_loss
                 loss.backward(retain_graph=True)
                 
-                self.grad_clamp(self.modTActor.parameters(), 0.1)
-                self.grad_clamp(self.modTCritic.parameters(), 0.1)
+                #self.grad_clamp(self.modTActor.parameters(), 0.1)
+                #self.grad_clamp(self.modTCritic.parameters(), 0.1)
                 self.optimizerActor.step()
                 self.optimizerCritic.step()
                 mean_policy = torch.cat(saved_act_Logp, 0).exp().mean(dim=0)
