@@ -221,18 +221,18 @@ class ariaModel(nn.Module):
         self.with_memory = with_memory
         self.batch_size = batch_size
         self.vocabulary_size = vocabulary_size
-        self.obs_Mod = lin_Mod([2, self.hiddenDim//2])
-        self.msg_Enc = lin_Mod([4, self.hiddenDim//2, self.hiddenDim//2], sftmx = False)
-        self.rep_Mod = lin_Mod([self.hiddenDim, self.hiddenDim])
+        self.obs_Mod = nn.Sequential(nn.Linear(2, self.hiddenDim//2), nn.ReLU())
+        self.msg_Enc = nn.Sequential(nn.Linear(4, self.hiddenDim//2), nn.ReLU(), nn.Linear(self.hiddenDim//2, self.hiddenDim//2), nn.ReLU())
+        self.rep_Mod = nn.Sequential(nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU())
         if self.with_memory:
             self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
-            self.action_Mod = nn.Sequential(lin_Mod([self.memory_size, 1], sftmx = False), nn.Sigmoid())
-            self.msg_Dec = lin_Mod([self.memory_size, self.memory_size, self.vocabulary_size], sftmx=True)
-            self.value_head = lin_Mod([self.memory_size, self.memory_size, 1])
+            self.action_Mod = nn.Sequential(nn.Linear(self.memory_size, 1), nn.Sigmoid())
+            self.msg_Dec = nn.Sequential(nn.Linear(self.memory_size, self.memory_size), nn.Linear(self.memory_size, self.vocabulary_size), nn.Softmax(dim=-1))
+            self.value_head = nn.Sequential(nn.Linear(self.memory_size, self.memory_size), nn.Linear(self.memory_size, 1))
         else : 
             self.memory = None
-            self.action_Mod = lin_Mod([self.hiddenDim, 1], sftmx = True)
-            self.value_head = lin_Mod([self.hiddenDim, 1])
+            self.action_Mod = nn.Sequential(nn.Linear(self.hiddenDim, 1), nn.Sigmoid())
+            self.value_head = nn.Sequential(nn.Linear(self.hiddenDim, self.hiddenDim), nn.Linear(self.memory_size, 1))
        
     def forward(self, obs, msg, memory):
         o = self.obs_Mod(obs)
