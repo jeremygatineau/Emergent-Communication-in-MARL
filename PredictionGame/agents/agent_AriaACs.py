@@ -20,7 +20,7 @@ class AriaACs:
         
         self.modIActor = ariaActor(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
         self.modTActor = ariaActor(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
-        self.modTCritic = Baseline()
+        self.modTCritic = ariaCritic(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
         #ariaCritic(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
 
         if self.with_memory:
