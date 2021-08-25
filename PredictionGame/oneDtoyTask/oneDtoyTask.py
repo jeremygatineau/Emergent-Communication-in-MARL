@@ -10,7 +10,9 @@ class ToyTask():
         self.initMsgs = [np.zeros(4), np.zeros(4)]
     def step(self, predictions, messages):
         nxtObs =  self.hiddenStateField.step()
+        
         observations = np.apply_along_axis(self.observationMappingFct, -1, nxtObs)
+        
         downlinkMsgs = self.comChannel.setMessages(messages)
         rewards = self._getRewardsFromObsPred(predictions, observations)
         done = False

@@ -62,7 +62,6 @@ class AriaAC:
         return a, m
     
     def select_actionTraing(self, obs, msg, last_state):
-    
         obs_t = torch.tensor([obs], dtype=torch.float32)
         msg_t = torch.tensor([msg], dtype=torch.float32)
         
@@ -77,8 +76,17 @@ class AriaAC:
         m = m_distrib.sample()
         a_entropy = a_distrib.entropy() 
         m_entropy = m_distrib.entropy()
-        return a_distrib.log_prob(a), m_distrib.log_prob(m), value, hid_state, a_entropy + m_entropy, a_distrib.probs, m_distrib.probs
-
+        return a, m, a_distrib.log_prob(a), m_distrib.log_prob(m), value, hid_state, a_entropy + m_entropy, torch.cat([action, 1-action], -1), message
+    
+    def train_online(self, reward, a_lp, m_lp, val):
+        
+        adv = reward[:-1]-val[:-1]+self.gamma*val[1:]
+        policy_loss = -(a_lp[:-1] + m_lp[:-1])*adv.detach()
+        value_loss = adv.pow(2)
+        loss = policy_loss.mean()+ value_loss.mean()
+        loss.backward()
+        self.optimizer.step()
+        return policy_loss, value_loss, 0 
 
     def train_on_batch(self, state, reward):    
         if len(self.saved_obs)<self.replay_size:
@@ -134,7 +142,7 @@ class AriaAC:
                     Fi_m = nn.functional.gumbel_softmax(message.log(), tau=1)[0]
                    
                     rho_m = torch.clamp(Fi_m[m]/Bi_m[m], min=0, max=5).detach()
-                    advantage = rewards[i]-val + self.gamma*val_
+                    advantage = rewards[i]-val
                     #policy_loss += -(Fi_a[a].log()+Fi_m[m].log())*advantage.detach() # GBS 
                     #policy_loss += -(Fi_a[a].log()*rho_a.detach()+Fi_m[m].log()*rho_m.detach())*advantage.detach()  # GSB prioritized sampling   
                     policy_loss += -(a_lp)*advantage.detach()  # straight AC

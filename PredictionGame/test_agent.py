@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from oneDtoyTask.oneDtoyTask import ToyTask, OneDfield, TwoWayComChannel
 from agents.agent_AriaRE import AriaRE
-from agents.agent_AriaACs import AriaACs
+from agents.agent_AriaAC import AriaAC
 from IPython import display
 import wandb
 import PIL
@@ -16,19 +16,19 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = 10000
-opt_params = {"lr":0.01, "training_loops":1, "batch_size":28, \
-              "replay_size": 30, "gamma":0.9, "vocab_size":4, \
+epochs = 1000
+opt_params = {"lr":0.01, "training_loops":1, "batch_size":2, \
+              "replay_size": 3, "gamma":0.9, "vocab_size":4, \
               "memory_size":8, "eps":0.001}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
-agent0 = AriaACs(opt_params=opt_params, with_memory=True, aidi=0)
-agent1 = AriaACs(opt_params=opt_params, with_memory=True, aidi=1)
+agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
+agent1 = AriaAC(opt_params=opt_params, with_memory=True, aidi=1)
 np.random.seed(1)
 field = OneDfield(speed=1)
 Task = ToyTask(field=field, observationMappingFct=lambda x: (x>0.5).astype(int), comChannel=TwoWayComChannel())
 
-wandb.watch((agent0.modTActor, agent1.modTActor), log="all", log_freq=5)
+wandb.watch((agent0.modT, agent1.modT), log="all", log_freq=5)
 table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
 run.log({"Batch Predictions": table})
 # %%
