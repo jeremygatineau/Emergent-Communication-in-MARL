@@ -59,8 +59,8 @@ class AriaAC:
         adv = rewards[:-1]-self.saved_values[:-1]+self.gamma*self.saved_values[1:] # TD error
         policy_loss = -(self.saved_a_lp[:-1] + self.saved_m_lp[:-1])*adv.detach()
         value_loss = adv.pow(2)
-        entropy_loss = self.saved_entropies.mean()
-        loss = policy_loss.mean() + value_loss.mean() #+ self.eps*entropy_loss
+        entropy_loss = -self.saved_entropies.mean()
+        loss = policy_loss.mean() + value_loss.mean() + self.eps*entropy_loss
         loss.backward(retain_graph=True)
         self.optimizer.step()
 

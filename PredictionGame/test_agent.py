@@ -16,10 +16,10 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(2e4)
-opt_params = {"lr":0.005, "batch_size":50, \
+epochs = int(4e3)
+opt_params = {"lr":0.01, "batch_size":50, \
               "gamma":0.9, "vocab_size":4, \
-              "memory_size":8, "hidden_size": 16, "eps":0.001}
+              "memory_size":8, "hidden_size": 16, "eps":0.01}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
