@@ -12,11 +12,12 @@ class AriaAC:
         self.gamma = opt_params["gamma"]
         self.vocabulary_size = opt_params["vocab_size"]
         self.memory_size = opt_params["memory_size"]
+        self.hidden_dim = opt_params["hidden_size"]
         self.eps = np.finfo(np.float32).eps.item()
         self.with_memory = with_memory
         
         #self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
-        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, with_memory=self.with_memory).float().train()
+        self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, hidden_dim=self.hidden_dim, with_memory=self.with_memory).float().train()
         if self.with_memory:
             self.hid_states = [torch.zeros(1, 2*self.memory_size).detach()]
         else:
