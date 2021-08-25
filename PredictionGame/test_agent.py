@@ -16,9 +16,9 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = 1000
-opt_params = {"lr":0.01, "training_loops":1, "batch_size":2, \
-              "replay_size": 3, "gamma":0.9, "vocab_size":4, \
+epochs = 10000
+opt_params = {"lr":0.01, "batch_size":20, \
+              "gamma":0.9, "vocab_size":4, \
               "memory_size":8, "eps":0.001}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
@@ -78,38 +78,54 @@ def get_images(obsers, preds):
 # %%
 obs, downlink_msgs = Task.reset()
 losses = []
+rewards0 = []
 rewards1 = []
-rewards2 = []
 epoch = 0
 observations = []
 predictions = []
 while epoch<epochs:
-    
-    a0, m0u=  agent0.select_action(obs[0], downlink_msgs[0])
-    a1, m1u= agent1.select_action(obs[1], downlink_msgs[1])
-    mu_ = np.zeros((2, opt_params["vocab_size"]))
-    mu_[0, m0u.item()] = 1
-    mu_[1, m1u.item()] = 1
-    
-    predictions.append((a0.item(), a1.item()))
-    (obs_, downlink_msgs_), r, done = Task.step([a0.item(), a1.item()], [mu_[0], mu_[1]])
-    observations.append([obs_[0][1], obs_[1][0]])
-    loss0, rew0, mean_policy0 = agent0.train_on_batch([obs[0], Task.initMsgs[0]], r[0])
-    loss1, rew1, mean_policy1 = agent1.train_on_batch([obs[1], Task.initMsgs[1]], r[1])
+    rs0 = torch.zeros(opt_params["batch_size"])
+    rs1 = torch.zeros(opt_params["batch_size"])
+    a_ps0_ = []
+    a_ps1_ = []
+    m_ps0_ = [] 
+    m_ps1_ = []
+    agent0.optimizer.zero_grad()
+    agent1.optimizer.zero_grad()
+    for bt in range(opt_params["batch_size"]):
+        
+        a0, m0, a_ps0, m_ps0=  agent0.select_actionTraing(obs[0], downlink_msgs[0], bt)
+        a1, m1, a_ps1, m_ps1=  agent1.select_actionTraing(obs[1], downlink_msgs[1], bt)
+        
+        a_ps0_.append(a_ps0[0, 0].item())
+        a_ps1_.append(a_ps1[0, 0].item())
+        mu_ = np.zeros((2, opt_params["vocab_size"]))
+        mu_[0, m0.item()] = 1
+        mu_[1, m1.item()] = 1
+        # just need a, m, a_ps, m_ps
+        
+        predictions.append((a0.item(), a1.item()))
+        (obs_, downlink_msgs_), r, done = Task.step([a0.item(), a1.item()], mu_)
+        observations.append([obs_[0][1], obs_[1][0]])
+        rs0[bt] = r[0]
+        rs1[bt] = r[1]
+    loss0 = agent0.train_online(rs0)
+    loss1 = agent1.train_online(rs1)
+    # only returns losses 
     obs = obs_
     downlink_msgs = downlink_msgs_
     if loss0 is not None:
         
         wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
-                   "entropy loss A0": loss0[2],"reward A0": np.mean(rew0), \
+                   "entropy loss A0": loss0[2],"reward A0": rs0.mean().item(), \
                    "policy loss A1": loss1[0], "value loss A1": loss1[1], \
-                   "entropy loss A1": loss1[2], "reward A1": np.mean(rew1),\
-                   "mean policy A0": mean_policy0, "mean policy A1": mean_policy1})
+                   "entropy loss A1": loss1[2], "reward A1": rs1.mean().item(),\
+                   "mean policy A0": np.mean(a_ps0_), "mean policy A1": np.mean(a_ps1_)})
         
 
         losses.append([loss0, loss1])
-        rewards1.append(rew0)
-        rewards1.append(rew1)
+        rewards0.append(rs0.mean().item())
+        rewards1.append(rs1.mean().item())
         if epoch%50==0:
             im0, im1 = get_images(np.array(observations), np.array(predictions))
             table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])

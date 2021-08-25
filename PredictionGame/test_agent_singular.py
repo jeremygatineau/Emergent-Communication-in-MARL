@@ -76,7 +76,6 @@ while epoch<epochs:
     m_lps = torch.zeros(opt_params["batch_size"])
     vals = torch.zeros(opt_params["batch_size"])
     hid_states = [hid_state.detach()]
-    init_state = hid_state.detach()
     agent0.optimizer.zero_grad()
     for bt in range(opt_params["batch_size"]):
         
