@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(1e4)
+epochs = int(5e4)
 opt_params = {"lr":0.001, "batch_size":40, \
               "gamma":0.9, "vocab_size":4, \
               "memory_size":20, "hidden_size": 20, \
@@ -123,7 +123,6 @@ while epoch<epochs:
 
         if epoch%50==0:
             im0, im1 = get_images(np.array(observations), np.array(predictions))
-            table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
             print("Training epoch ", epoch)
             table.add_data(epoch,  wandb.Image(im0),  wandb.Image(im1))
             run.log({"Batch Predictions": table})
