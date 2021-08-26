@@ -3,11 +3,12 @@ import matplotlib.pyplot as plt
 
 
 class ToyTask():
-    def __init__(self, field, observationMappingFct, comChannel):
+    def __init__(self, field, observationMappingFct, comChannel, cross_r_coef=0):
         self.hiddenStateField = field
         self.observationMappingFct = observationMappingFct
         self.comChannel = comChannel
         self.initMsgs = [np.zeros(4), np.zeros(4)]
+        self.la = cross_r_coef
     def step(self, predictions, messages):
         nxtObs =  self.hiddenStateField.step()
         
@@ -20,8 +21,8 @@ class ToyTask():
         
     def _getRewardsFromObsPred(self, pred, obs):
         rewards = [0, 0]
-        rewards[0] = int(pred[0] == obs[0][1]) + int(pred[1] == obs[1][0])
-        rewards[1] = int(pred[1] == obs[1][0]) + int(pred[0] == obs[0][1])
+        rewards[0] = int(pred[0] == obs[0][1]) + self.la*int(pred[1] == obs[1][0])
+        rewards[1] = int(pred[1] == obs[1][0]) + self.la*int(pred[0] == obs[0][1])
         return rewards
     def reset(self):
         nxtObs = self.hiddenStateField.reset()
