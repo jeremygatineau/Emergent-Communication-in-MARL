@@ -16,11 +16,11 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(8e4)
+epochs = int(1e4)
 opt_params = {"lr":0.001, "batch_size":40, \
               "gamma":0.9, "vocab_size":4, \
               "memory_size":20, "hidden_size": 20, \
-              "eps":0.01, "cross_reward_coef":0.3}
+              "eps":0.01, "cross_reward_coef":1}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
@@ -78,9 +78,6 @@ def get_images(obsers, preds):
 
 # %%
 obs, downlink_msgs = Task.reset()
-losses = []
-rewards0 = []
-rewards1 = []
 epoch = 0
 observations = []
 predictions = []
@@ -124,9 +121,6 @@ while epoch<epochs:
                    "mean policy A0": np.mean(a_ps0_), "mean policy A1": np.mean(a_ps1_)})
         
 
-        losses.append([loss0, loss1])
-        rewards0.append(rs0.mean().item())
-        rewards1.append(rs1.mean().item())
         if epoch%50==0:
             im0, im1 = get_images(np.array(observations), np.array(predictions))
             table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
