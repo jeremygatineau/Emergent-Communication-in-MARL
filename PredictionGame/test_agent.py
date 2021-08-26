@@ -20,7 +20,7 @@ epochs = int(5e3)
 opt_params = {"lr":0.001, "batch_size":20, \
               "gamma":0.9, "vocab_size":4, \
               "memory_size":10, "hidden_size": 10, \
-              "eps":0.01, "cross_reward_coef":0}
+              "eps":0.01, "cross_reward_coef":0.2}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
