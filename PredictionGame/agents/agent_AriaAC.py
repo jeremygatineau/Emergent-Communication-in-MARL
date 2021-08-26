@@ -56,9 +56,9 @@ class AriaAC:
         return a, m, torch.cat([action, 1-action], -1), message
     
     def train_online(self, rewards):
-        adv = rewards[:-1]-self.saved_values[:-1]+self.gamma*self.saved_values[1:] # TD error
-        policy_loss = -(self.saved_a_lp[:-1] + self.saved_m_lp[:-1])*adv.detach()
-        value_loss =  nn.functional.smooth_l1_loss(rewards[:-1]+self.gamma*self.saved_values[1:], self.saved_values[:-1], reduction='none')# adv.pow(2)
+        adv = rewards[-2]-self.saved_values[-2]+self.gamma*self.saved_values[-1] # TD error
+        policy_loss = -(self.saved_a_lp[-2] + self.saved_m_lp[-2])*adv.detach()
+        value_loss =  nn.functional.smooth_l1_loss(rewards[-2]+self.gamma*self.saved_values[-1], self.saved_values[-2], reduction='none')# adv.pow(2)
         entropy_loss = -self.saved_entropies.mean()
         loss = policy_loss.mean() + value_loss.mean() + self.eps*entropy_loss
         loss.backward(retain_graph=True)
