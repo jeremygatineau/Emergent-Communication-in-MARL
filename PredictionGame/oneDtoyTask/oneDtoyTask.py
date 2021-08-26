@@ -57,7 +57,7 @@ class OneDfield():
         self.n_channels = n_channels
         self.speed = speed
         self.gen_fct_state = [0, 4]
-        self.onoff_dutyCyle = [(2, 15), 3]
+        self.onoff_dutyCyle = [(2, 10), 3]
         self.agent_positions = np.array(agent_positions)
         self.channels_propagation_dirs = channels_propagation_dirs
         self.agent_idxs = np.floor(self.n_discrete*self.agent_positions).astype(int)
@@ -68,7 +68,7 @@ class OneDfield():
             return (1, 1)
         elif self.gen_fct_state[0] == 0 and self.gen_fct_state[1]==0:
             
-            self.gen_fct_state[1] = 8 #np.random.randint(self.onoff_dutyCyle[0][0], self.onoff_dutyCyle[0][1])
+            self.gen_fct_state[1] = np.random.randint(self.onoff_dutyCyle[0][0], self.onoff_dutyCyle[0][1])
             self.gen_fct_state[0] = self.onoff_dutyCyle[1]
             return (0, 0)
         elif self.gen_fct_state[1]>0:
