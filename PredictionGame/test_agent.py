@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(5e3)
+epochs = int(2e4)
 opt_params = {"lr":0.001, "batch_size":20, \
               "gamma":0.9, "vocab_size":4, \
               "memory_size":10, "hidden_size": 10, \
