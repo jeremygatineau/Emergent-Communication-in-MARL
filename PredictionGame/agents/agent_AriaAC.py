@@ -93,7 +93,7 @@ class ariaModel(nn.Module):
         self.batch_size = batch_size
         self.vocabulary_size = vocabulary_size
         self.obs_Mod = nn.Sequential(nn.Linear(2, self.hiddenDim//2), nn.ReLU())
-        self.msg_Enc = nn.Sequential(nn.Linear(4, self.hiddenDim//2), nn.ReLU(), nn.Linear(self.hiddenDim//2, self.hiddenDim//2), nn.ReLU())
+        self.msg_Enc = nn.Sequential(nn.Linear(self.vocabulary_size, self.hiddenDim//2), nn.ReLU(), nn.Linear(self.hiddenDim//2, self.hiddenDim//2), nn.ReLU())
         self.rep_Mod = nn.Sequential(nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU())
         if self.with_memory:
             self.memory = nn.LSTMCell(self.hiddenDim, self.memory_size)
