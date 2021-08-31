@@ -27,7 +27,11 @@ agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
 agent1 = AriaAC(opt_params=opt_params, with_memory=True, aidi=1)    
 np.random.seed(1)
 field = OneDfield(speed=1)
-Task = ToyTask(field=field, observationMappingFct=lambda x: (x>0.5).astype(int), comChannel=TwoWayComChannel(), cross_r_coef=opt_params["cross_reward_coef"])
+Task = ToyTask(field=field,\
+               observationMappingFct=lambda x: (x>0.5).astype(int), \
+               comChannel=TwoWayComChannel(), \
+               vocabulary_size=opt_params["vocab_size"], \
+               cross_r_coef=opt_params["cross_reward_coef"])
 
 wandb.watch((agent0.modT, agent1.modT), log="all", log_freq=5)
 table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])

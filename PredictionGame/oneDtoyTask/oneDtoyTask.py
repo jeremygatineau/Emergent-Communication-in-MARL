@@ -3,11 +3,12 @@ import matplotlib.pyplot as plt
 
 
 class ToyTask():
-    def __init__(self, field, observationMappingFct, comChannel, cross_r_coef=0):
+    def __init__(self, field, observationMappingFct, comChannel, vocabulary_size, cross_r_coef=0):
         self.hiddenStateField = field
         self.observationMappingFct = observationMappingFct
         self.comChannel = comChannel
-        self.initMsgs = [np.zeros(4), np.zeros(4)]
+        self.vocabulary_size = vocabulary_size
+        self.initMsgs = [np.zeros(vocabulary_size), np.zeros(vocabulary_size)]
         self.la = cross_r_coef
     def step(self, predictions, messages):
         nxtObs =  self.hiddenStateField.step()
