@@ -16,10 +16,10 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(5e4)
+epochs = int(15e4)
 opt_params = {"lr":0.0007, "batch_size":64, \
               "gamma":0.9, "vocab_size":16, \
-              "memory_size":20, "hidden_size": 20, \
+              "memory_size":20, "hidden_size": 40, \
               "eps":0.01, "cross_reward_coef":0.3}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
