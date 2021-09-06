@@ -16,15 +16,15 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(15e4)
-opt_params = {"lr":0.0007, "batch_size":64, \
+epochs = int(2e4)
+opt_params = {"lr":0.001, "batch_size":40, \
               "gamma":0.9, "vocab_size":16, \
-              "memory_size":20, "hidden_size": 40, \
-              "eps":0.01, "cross_reward_coef":0.3}
+              "memory_size":20, "hidden_size": 20, \
+              "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":0.1}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
-agent0 = AriaAC(opt_params=opt_params, with_memory=True, aidi=0)
-agent1 = AriaAC(opt_params=opt_params, with_memory=True, aidi=1)    
+agent0 = AriaAC(opt_params=opt_params, split=True, with_memory=True, aidi=0)
+agent1 = AriaAC(opt_params=opt_params, split=True, with_memory=True, aidi=1)    
 np.random.seed(1)
 field = OneDfield(speed=1)
 Task = ToyTask(field=field,\
