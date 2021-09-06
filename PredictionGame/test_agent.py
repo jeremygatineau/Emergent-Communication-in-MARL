@@ -20,7 +20,7 @@ epochs = int(2e4)
 opt_params = {"lr":0.001, "batch_size":40, \
               "gamma":0.9, "vocab_size":16, \
               "memory_size":20, "hidden_size": 20, \
-              "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":0.1}
+              "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":None}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, split=True, with_memory=True, aidi=0)
@@ -88,10 +88,7 @@ predictions = []
 while epoch<epochs:
     rs0 = torch.zeros(opt_params["batch_size"])
     rs1 = torch.zeros(opt_params["batch_size"])
-    a_ps0_ = []
-    a_ps1_ = []
-    m_ps0_ = [] 
-    m_ps1_ = []
+    a_ps0_, a_ps1_, m_ps0_, m_ps1_= [], [], [], []
     agent0.optimizer.zero_grad()
     agent1.optimizer.zero_grad()
     for bt in range(opt_params["batch_size"]):
