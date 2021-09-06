@@ -26,6 +26,8 @@ class AriaAC:
         if self.with_memory:
             if split:
                 self.hid_states = [[torch.zeros(1, 2*self.memory_size).detach(), torch.zeros(1, 2*self.memory_size).detach()]]
+            else:
+                self.hid_states = [torch.zeros(1, 2*self.memory_size).detach()]
         else:
             self.hid_states = None
 
@@ -74,7 +76,10 @@ class AriaAC:
 
         # Reset buffers after training on batch
         if self.with_memory:
-            self.hid_states = [self.hid_states[-1].detach()]
+            if self.split:
+                self.hid_states = [[self.hid_states[-1][0].detach(), self.hid_states[-1][1].detach()]]
+            else:
+                self.hid_states = [self.hid_states[-1].detach()]
         self.saved_a_lp = torch.zeros(self.batch_size, dtype=torch.float32)
         self.saved_m_lp = torch.zeros(self.batch_size, dtype=torch.float32)
         self.saved_rewards = torch.zeros(self.batch_size, dtype=torch.float32)
