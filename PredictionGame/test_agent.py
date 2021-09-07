@@ -17,10 +17,10 @@ matplotlib.use('Agg')
 
 
 epochs = int(5e4)
-opt_params = {"lr":0.001, "batch_size":20, \
-              "gamma":0.9, "vocab_size":2, \
+opt_params = {"lr":3e-4, "batch_size":40, \
+              "gamma":0.99, "vocab_size":2, \
               "memory_size":20, "hidden_size": 30, \
-              "eps":0.1, "cross_reward_coef":0.3, "grad_clamp":None}
+              "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":None}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
 agent0 = AriaAC(opt_params=opt_params, split=True, with_memory=True, aidi=0)
