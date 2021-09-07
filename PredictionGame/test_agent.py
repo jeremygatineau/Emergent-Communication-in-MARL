@@ -17,9 +17,9 @@ matplotlib.use('Agg')
 
 
 epochs = int(5e4)
-opt_params = {"lr":0.005, "batch_size":20, \
+opt_params = {"lr":0.001, "batch_size":20, \
               "gamma":0.9, "vocab_size":2, \
-              "memory_size":20, "hidden_size": 20, \
+              "memory_size":20, "hidden_size": 30, \
               "eps":0.1, "cross_reward_coef":0.3, "grad_clamp":None}
 run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 

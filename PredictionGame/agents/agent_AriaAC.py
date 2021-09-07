@@ -153,7 +153,7 @@ class ariaModelSplit(nn.Module):
         self.rep_Mod_A = nn.Sequential(nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU())
         self.obs_Mod_M = nn.Sequential(nn.Linear(2, self.hiddenDim//2), nn.ReLU())
         self.msg_Enc_M = nn.Sequential(nn.Linear(self.vocabulary_size, self.hiddenDim//2), nn.ReLU(), nn.Linear(self.hiddenDim//2, self.hiddenDim//2), nn.ReLU())
-        self.rep_Mod_M = nn.Sequential(nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU())
+        self.rep_Mod_M = nn.Sequential(nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU(), nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU(), nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU(), nn.Linear(self.hiddenDim, self.hiddenDim), nn.ReLU())
         if self.with_memory:
             self.memory_A = nn.LSTMCell(self.hiddenDim, self.memory_size)
             self.memory_M = nn.LSTMCell(self.hiddenDim, self.memory_size)
