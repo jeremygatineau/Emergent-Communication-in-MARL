@@ -8,23 +8,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from oneDtoyTask.oneDtoyTask import ToyTask, OneDfield, TwoWayComChannel
 from agents.agent_AriaRE import AriaRE
-from agents.agent_AriaAC import AriaAC
+from agents.agent_AriaACs import AriaACs
 from IPython import display
 import wandb
 import PIL
 import matplotlib
 matplotlib.use('Agg')
 
-
+_log=True
 epochs = int(5e4)
 opt_params = {"lr":3e-4, "batch_size":40, \
               "gamma":0.99, "vocab_size":2, "training_loops":1, \
               "memory_size":20, "hidden_size": 30, "replay_size":120, \
               "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":None}
-run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
 
-agent0 = AriaAC(opt_params=opt_params, split=True, with_memory=True, aidi=0)
-agent1 = AriaAC(opt_params=opt_params, split=True, with_memory=True, aidi=1)    
+if _log: run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
+
+agent0 = AriaACs(opt_params=opt_params, split=True, with_memory=True, aidi=0)
+agent1 = AriaACs(opt_params=opt_params, split=True, with_memory=True, aidi=1)    
 np.random.seed(1)
 field = OneDfield(speed=1)
 Task = ToyTask(field=field,\
@@ -33,9 +34,9 @@ Task = ToyTask(field=field,\
                vocabulary_size=opt_params["vocab_size"], \
                cross_r_coef=opt_params["cross_reward_coef"])
 
-wandb.watch((agent0.modT, agent1.modT), log="all", log_freq=5)
-table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
-run.log({"Batch Predictions": table})
+if _log: wandb.watch((agent0.modT, agent1.modT), log="all", log_freq=5)
+if _log: table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
+if _log: run.log({"Batch Predictions": table})
 # %%
 def plot_preds(obsers, preds):
     display.clear_output(wait=True)
@@ -88,34 +89,24 @@ predictions = []
 while epoch<epochs:
     rs0 = torch.zeros(opt_params["batch_size"])
     rs1 = torch.zeros(opt_params["batch_size"])
-    a_ps0_, a_ps1_, m_ps0_, m_ps1_= [], [], [], []
-    agent0.optimizer.zero_grad()
-    agent1.optimizer.zero_grad()
-    for bt in range(opt_params["batch_size"]):
-        
-        a0, m0, a_ps0, m_ps0=  agent0.select_actionTraing(obs[0], downlink_msgs[0], bt)
-        a1, m1, a_ps1, m_ps1=  agent1.select_actionTraing(obs[1], downlink_msgs[1], bt)
-        
-        a_ps0_.append(a_ps0[0, 0].item())
-        a_ps1_.append(a_ps1[0, 0].item())
-        mu_ = np.zeros((2, opt_params["vocab_size"]))
-        mu_[0, m0.item()] = 1
-        mu_[1, m1.item()] = 1
-        # just need a, m, a_ps, m_ps
-        
-        predictions.append((a0.item(), a1.item()))
-        (obs_, downlink_msgs_), r, done = Task.step([a0.item(), a1.item()], mu_)
-        observations.append([obs_[0][1], obs_[1][0]])
-        rs0[bt] = r[0]
-        rs1[bt] = r[1]
-    loss0 = agent0.train_online(rs0)
-    loss1 = agent1.train_online(rs1)
-    # only returns losses 
+    a0, m0 = agent0.select_action(obs[0], downlink_msgs[0])
+    a1, m1 = agent1.select_action(obs[1], downlink_msgs[1])
+    mu_ = np.zeros((2, opt_params["vocab_size"]))
+    mu_[0, m0.item()] = 1
+    mu_[1, m1.item()] = 1
+
+    predictions.append((a0.item(), a1.item()))
+    (obs_, downlink_msgs_), r, done = Task.step([a0.item(), a1.item()], mu_)
+    observations.append([obs_[0][1], obs_[1][0]])
+    
+    loss0, a_ps0_, rs0 = agent0.train_on_batch([obs[0], downlink_msgs[0]], r[0], (a0, m0))
+    loss1, a_ps1_, rs1 = agent1.train_on_batch([obs[1], downlink_msgs[1]], r[1], (a1, m1))
+     
     obs = obs_
     downlink_msgs = downlink_msgs_
     if loss0 is not None:
         
-        wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
+        if _log: wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
                    "entropy loss A0": loss0[2],"reward A0": rs0.mean().item(), \
                    "policy loss A1": loss1[0], "value loss A1": loss1[1], \
                    "entropy loss A1": loss1[2], "reward A1": rs1.mean().item(),\
@@ -125,8 +116,8 @@ while epoch<epochs:
         if epoch%50==0:
             im0, im1 = get_images(np.array(observations), np.array(predictions))
             print("Training epoch ", epoch)
-            table.add_data(epoch,  wandb.Image(im0),  wandb.Image(im1))
-            run.log({"Batch Predictions": table})
+            if _log: table.add_data(epoch,  wandb.Image(im0),  wandb.Image(im1))
+            if _log: run.log({"Batch Predictions": table})
         epoch+=1
         observations = []
         predictions = []

@@ -20,9 +20,10 @@ class AriaAC:
 
         if split: 
             self.modT = ariaModelSplit(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, hidden_dim=self.hidden_dim, with_memory=self.with_memory).float().train()
-        #self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size ,with_memory=self.with_memory).float().eval()
+            self.modI = ariaModelSplit(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, hidden_dim=self.hidden_dim, with_memory=self.with_memory).float().eval()
         else:
             self.modT = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, hidden_dim=self.hidden_dim, with_memory=self.with_memory).float().train()
+            self.modI = ariaModel(batch_size=self.batch_size, vocabulary_size=self.vocabulary_size, memory_size=self.memory_size, hidden_dim=self.hidden_dim, with_memory=self.with_memory).float().eval()
         if self.with_memory:
             if split:
                 self.hid_states = [[torch.zeros(1, 2*self.memory_size).detach(), torch.zeros(1, 2*self.memory_size).detach()]]
@@ -39,7 +40,29 @@ class AriaAC:
         self.saved_values = torch.zeros(self.batch_size)
         self.saved_entropies = torch.zeros(self.batch_size)
 
+    def select_action(self, obs, msg, hiden_state):
     
+        obs_t = torch.tensor([obs], dtype=torch.float32)
+        msg_t = torch.tensor([msg], dtype=torch.float32)
+        
+        if self.with_memory:
+            action, message, hid_state = self.modIActor.forward(obs_t.float(), msg_t.float(), self.memoriesActor[-1])
+            #hid_state_critic, _ = self.modTCritic.forward(obs_t.float(), msg_t.float(), self.memoriesCritic[-1], action, message)
+            if len(self.saved_obs) <self.replay_size:
+                self.memoriesActor.append(hid_state.detach())
+                #self.memoriesCritic.append(hid_state_critic.detach())
+            else:
+                self.memoriesActor[-1] = hid_state.detach()
+                #self.memoriesCritic[-1] = hid_state_critic.detach()
+        else:
+            action, message, _, = self.modIActor.forward(obs_t.float(), msg_t.float(), None)
+
+        a_distrib = Categorical(torch.cat([action, 1-action], -1))
+        m_distrib = Categorical(message)
+        a = torch.argmax(a_distrib.probs, axis=1)
+        m = torch.argmax(m_distrib.probs, axis=1)
+        return a, m
+
     def select_actionTraing(self, obs, msg, bt):
         obs_t = torch.tensor([obs], dtype=torch.float32)
         msg_t = torch.tensor([msg], dtype=torch.float32)
@@ -65,13 +88,13 @@ class AriaAC:
     
     def train_online(self, rewards):
         returns = torch.tensor(self.getReturns(rewards))
-        #adv = rewards[:-1]-self.saved_values[:-1]+self.gamma*self.saved_values[1:] # TD error
-        #policy_loss = -(self.saved_a_lp[:-1] + self.saved_m_lp[:-1])*adv.detach()
-        #value_loss =  nn.functional.smooth_l1_loss(rewards[:-1]+self.gamma*self.saved_values[1:], self.saved_values[:-1], reduction='none')# adv.pow(2)
+        adv = rewards[:-1]-self.saved_values[:-1]+self.gamma*self.saved_values[1:] # TD error
+        policy_loss = -(self.saved_a_lp[:-1] + self.saved_m_lp[:-1])*adv.detach()
+        value_loss =  nn.functional.smooth_l1_loss(rewards[:-1]+self.gamma*self.saved_values[1:], self.saved_values[:-1], reduction='none')# adv.pow(2)
 
-        adv = returns-self.saved_values # TD error with returns, should be better cause no bias
-        policy_loss = -(self.saved_a_lp + self.saved_m_lp)*adv.detach()
-        value_loss =  nn.functional.smooth_l1_loss(returns, self.saved_values, reduction='none')# adv.pow(2)
+        #adv = returns-self.saved_values # TD error with returns, should be better cause no bias
+        #policy_loss = -(self.saved_a_lp + self.saved_m_lp)*adv.detach()
+        #value_loss =  nn.functional.smooth_l1_loss(returns, self.saved_values, reduction='none')# adv.pow(2)
 
         entropy_loss = -self.saved_entropies.mean()
         loss = policy_loss.mean() + value_loss.mean() + self.eps*entropy_loss
@@ -93,7 +116,9 @@ class AriaAC:
         self.saved_entropies = torch.zeros(self.batch_size, dtype=torch.float32)
         
         return policy_loss, value_loss, entropy_loss
-
+    def train_offline(self, trajectory):
+        obs_t = torch.tensor([trajectory.obs], dtype=torch.float32)
+        msg_t = torch.tensor([trajectory.msg], dtype=torch.float32)
     def getReturns(self, rewards, normalize=False):
         _R = 0
         Gs = []
