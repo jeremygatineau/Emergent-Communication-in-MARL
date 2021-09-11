@@ -16,6 +16,7 @@ class AriaACs:
         self.gc = opt_params["grad_clamp"]
         self.replay_size = opt_params["replay_size"]
         self.training_loops = opt_params["training_loops"]
+        self.clip_c = opt_params["clip_c"]
         self.split = split
         self.eps = np.finfo(np.float32).eps.item()
         self.with_memory = with_memory
@@ -40,6 +41,8 @@ class AriaACs:
 
         self.saved_a = []
         self.saved_m = []
+        self.saved_a_lp = []
+        self.saved_m_lp = []
         self.saved_rewards = []
         self.saved_obs = []
         self.saved_downlink_msgs = []
@@ -72,6 +75,13 @@ class AriaACs:
         m_distrib = Categorical(message)
         a = torch.argmax(a_distrib.probs, axis=1)
         m = torch.argmax(m_distrib.probs, axis=1)
+        
+        if len(self.saved_obs) <self.replay_size:
+            self.saved_a_lp.append(a_distrib.log_prob(a).detach().item())
+            self.saved_m_lp.append(m_distrib.log_prob(m).detach().item())
+        else:
+            self.saved_a_lp[-1] = a_distrib.log_prob(a).detach().item()
+            self.saved_m_lp[-1] = m_distrib.log_prob(m).detach().item()
         return a, m
     
     def select_actionTraining(self, obs, msg, last_state, a_i, m_i):
@@ -99,10 +109,14 @@ class AriaACs:
         self.poppushBufferEpisode(state[0], state[1], reward, actions)
         self.minibatch_counter += 1
         if self.minibatch_counter >= self.batch_size:
-            
+            if self.batch_size == self.replay_size:
+                i0 = self.batch_size
+            else:
+                i0 = np.random.randint(self.batch_size, self.replay_size)
+
             for _ in range(self.training_loops):
                 self.optimizer.zero_grad()
-                i0 = np.random.randint(self.batch_size, self.replay_size)
+                
                 #returns = torch.tensor(self.getReturns(self.saved_rewards[i0-self.batch_size:i0], normalize=False), dtype=torch.float32)
                 rewards = torch.tensor(self.saved_rewards[i0-self.batch_size:i0], dtype=torch.float32)
                 #rewards -= rewards.mean()
@@ -124,8 +138,15 @@ class AriaACs:
                     a_lp_t[i] = a_lp
                     m_lp_t[i] = m_lp
                     entropy_t[i] = -entropy
+                a_lp_old = torch.tensor(self.saved_a_lp[i0-self.batch_size:i0], dtype=torch.float32)
+                m_lp_old = torch.tensor(self.saved_m_lp[i0-self.batch_size:i0], dtype=torch.float32)
+                r_a = torch.exp(a_lp_t[:-1]-a_lp_old[:-1])
+                r_m = torch.exp(m_lp_t[:-1]-m_lp_old[:-1])
                 adv = rewards[:-1]-val_t[:-1]+self.gamma*val_t[1:]
-                policy_loss = -(a_lp_t[:-1] + m_lp_t[:-1])*adv.detach()
+                actor_loss = -torch.min(r_a*adv.detach(), torch.clamp(r_a, 1-self.clip_c, 1+self.clip_c)*adv.detach())
+                message_loss = -torch.min(r_m*adv.detach(), torch.clamp(r_m, 1-self.clip_c, 1+self.clip_c)*adv.detach())
+                policy_loss = actor_loss + message_loss
+                #policy_loss = -(a_lp_t[:-1] + m_lp_t[:-1])*adv.detach()
                 value_loss =  nn.functional.smooth_l1_loss(rewards[:-1]+self.gamma*val_t[1:], val_t[:-1], reduction='none')# adv.pow(2)
                 entropy_loss = entropy_t.mean()
                 loss = policy_loss.mean() + value_loss.mean() + self.eps*entropy_loss
@@ -135,7 +156,7 @@ class AriaACs:
                 self.optimizer.step()
             self.batch_counter+=1
             self.minibatch_counter = 0
-            if self.batch_counter%100==0:
+            if self.batch_counter%1==0:
                 self.modI.load_state_dict(self.modT.state_dict())
             return (policy_loss, value_loss, entropy_loss), mean_a_pol, rewards
         return None, None, None
@@ -192,7 +213,6 @@ class AriaACs:
                     #Fi_a = nn.functional.gumbel_softmax(torch.cat([action, 1-action], -1).log(), tau=1)[0]
                     
                     #rho_a = torch.clamp(Fi_a[a_i]/Bi_a[a_i], min=0, max=5).detach()
-
                     #Bi_m= self.saved_m_lp[i0+i-self.batch_size][0]
                     #Fi_m = nn.functional.gumbel_softmax(message.log(), tau=1)[0]
                    
@@ -245,6 +265,8 @@ class AriaACs:
     def poppushBufferEpisode(self, obs, msg, reward, actions, pop=True):
         if pop:
             self.saved_a[:-1] = self.saved_a[1:]
+            self.saved_m[:-1] = self.saved_m[1:]
+            self.saved_a_lp[:-1] = self.saved_a_lp[1:]
             self.saved_m[:-1] = self.saved_m[1:]
             self.saved_rewards[:-1] = self.saved_rewards[1:]
             self.saved_obs[:-1] = self.saved_obs[1:]
