@@ -20,7 +20,7 @@ epochs = int(5e4)
 opt_params = {"lr":3e-4, "batch_size":40, \
               "gamma":0.99, "vocab_size":2, "training_loops":10, \
               "memory_size":20, "hidden_size": 30, "replay_size":40, \
-              "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":None, \
+              "eps":0.01, "cross_reward_coef":1, "grad_clamp":None, \
               "clip_c":0.2}
 
 if _log: run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
