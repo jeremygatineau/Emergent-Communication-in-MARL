@@ -36,8 +36,7 @@ Task = ToyTask(field=field,\
                cross_r_coef=opt_params["cross_reward_coef"])
 
 if _log: wandb.watch((agent0.modT, agent1.modT), log="all", log_freq=5)
-if _log: table = wandb.Table(columns=["Epoch#", "batch_pred A0", "batch_pred A1"])
-if _log: run.log({"Batch Predictions": table})
+
 # %%
 def plot_preds(obsers, preds):
     display.clear_output(wait=True)
@@ -117,8 +116,8 @@ while epoch<epochs:
         if epoch%50==0:
             im0, im1 = get_images(np.array(observations), np.array(predictions))
             print("Training epoch ", epoch)
-            if _log: table.add_data(epoch,  wandb.Image(im0),  wandb.Image(im1))
-            if _log: run.log({"Batch Predictions": table})
+            if _log: wandb.log({"batch_pred agent 0": wandb.Image(im0), "batch_pred agent 1": wandb.Image(im1)})
+            
         epoch+=1
         observations = []
         predictions = []
