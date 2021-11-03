@@ -85,12 +85,11 @@ class CombinationGame(gym.Env):
                 vector : the vector representation of the object, of size 7+max_obj_per_type which includes the object type and number
         """
         # define the vector
-        vector = np.zeros(7+self.max_obj_per_type)
+        vector = np.zeros(7+self.max_obj_per_type+1)
 
         # get the object type
         object_type = self.entity_string_doc_reverse[object_string[0:2]] if len(object_string) > 2 else self.entity_string_doc_reverse[object_string[0]]
         object_id = int(object_string[2:]) if len(object_string) > 2 else int(object_string[1])
-        
         # set the obeject type
         vector[object_type] = 1
         # set the object id
@@ -106,7 +105,13 @@ class CombinationGame(gym.Env):
             outputs : None
         """
         self.entity_list = entity_list
-
+    def _delete_position(self, indices, pos):
+        new_indices = []
+        for i in range(len(indices)):
+            if all(indices[i] == pos):
+                continue
+            new_indices.append(indices[i])
+        return new_indices
     def _remove_position_and_neighbors(self, position, indices):
         """
             removes the position and its neighbors from the list of available positions
@@ -118,41 +123,16 @@ class CombinationGame(gym.Env):
         """
         object_pos_x = position[0]
         object_pos_y = position[1]
+        offsets = [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]
+        indices = self._delete_position(indices, (object_pos_x, object_pos_y))
+        for offset in offsets:
+            # try except blocks to handle the cases when the remove argument is not in the indices
+
+            try:
+                indices = self._delete_position(indices, position + np.array(offset))
+            except:
+                pass
         
-        np.delete(indices, (object_pos_x, object_pos_y))
-        # try except blocks to handle the cases when the remove argument is not in the indices
-        try:
-            np.delete(indices, (object_pos_x-1, object_pos_y))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x+1, object_pos_y))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x, object_pos_y-1))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x, object_pos_y+1))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x-1, object_pos_y-1))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x-1, object_pos_y+1))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x+1, object_pos_y-1))
-        except:
-            pass
-        try:
-            np.delete(indices, (object_pos_x+1, object_pos_y+1))
-        except:
-            pass
         return indices
     def _generate_random_entity_list(self, total_number_of_objects):
         """
@@ -164,12 +144,15 @@ class CombinationGame(gym.Env):
         """
         # define the entity list
         entity_list = []
-        
+        assert total_number_of_objects<= self.max_obj_per_type*3, "total_number_of_objects should be less than 3*max_obj_per_type"
         # initiate list of unoccupied indices
         indices = np.array(np.unravel_index(range(self.grid_size*self.grid_size), (self.grid_size, self.grid_size))).T
         # initialize object counters for each object type
-        self._object_counter = np.zeros(7+self.max_obj_per_type, dtype=int)
+        self._object_counter = np.zeros(7, dtype=int)
         for i in range(total_number_of_objects):
+            if len(indices) == 0:
+                print(f"no more room to place objects, only {i} objects have been placed")
+                break
             # generate a random object type that is not a wall (object type 6) nor an agent (object type 2)
             object_type = np.random.choice([1,3,4])
             # if number of objects of that type is already equal to max_obj_per_type, generate another object type
@@ -181,16 +164,16 @@ class CombinationGame(gym.Env):
             # if object is an indicator
             if object_type == 4 or object_type == 5:
                 # choose a random position from the unoccupied indices list and make sure it is on the border
-                object_pos_x, object_pos_y = indices[np.random.randint(0, indices.shape[0])]
+                object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
                 while object_pos_x == 0 or object_pos_x == self.grid_size-1 or object_pos_y == 0 or object_pos_y == self.grid_size-1:
-                    object_pos_x, object_pos_y = indices[np.random.randint(0, indices.shape[0])]
+                    object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
                 # remove the chosen position as well as the neighboring grid cells from the unoccupied indices list
                 indices = self._remove_position_and_neighbors((object_pos_x, object_pos_y), indices)
 
             # if object is not a wall
             elif object_type != 6:
                 # choose a random position from the unoccupied indices list
-                object_pos_x, object_pos_y = indices[np.random.randint(0, indices.shape[0])]
+                object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
                 # remove the chosen position as well as the neighboring grid cells from the unoccupied indices list
                 indices = self._remove_position_and_neighbors((object_pos_x, object_pos_y), indices)
             # if object is a wall
@@ -203,9 +186,9 @@ class CombinationGame(gym.Env):
         # place one or two agents, depending on the self.number_of_agent parameter
         for i in range(self.number_of_agents):
             # choose a random position from the unoccupied indices list
-            object_pos_x, object_pos_y = indices[np.random.randint(0, indices.shape[0])]
+            object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
             # remove agent's position from the indices list
-            np.delete(indices, (object_pos_x, object_pos_y))
+            self._delete_position(indices, (object_pos_x, object_pos_y))
             # create the entity
             entity = Entity(2, (object_pos_x, object_pos_y), i+1)
             # add the entity to the entity list
@@ -236,24 +219,24 @@ class CombinationGame(gym.Env):
                 state : the initial state of the environment
         """
         # reset the grid
-        self.grid = np.zeros((self.grid_size, self.grid_size, 7+self.max_obj_per_type))
+        self.grid = np.zeros((self.grid_size, self.grid_size, 7+self.max_obj_per_type+1))
         # generate entity list
         self.entity_list = self._generate_random_entity_list(total_number_of_objects)
-        print(self.entity_list)
+        print([str(entity) for entity in self.entity_list])
         # place the entities in the grid
         self.place_entity_list_in_grid()
         # return the initial state
         return self.grid
         
 
-    def step(self, action):
+    def step(self, actions):
         """
             takes an action in the environment, returns the next state and reward. Actions 0-3 are for moving the agent. Action 4 staying in place. Action 5 and 6 are for picking up and placing objects respectively.
             inputs :
-                action : the action taken by the agent
+                action s: the action taken by the agents
             outputs :
                 next_state : the next state of the environment
-                reward : the reward received by the agent
+                reward : the reward received by the agents
                 done : boolean indicating whether the episode is over
         """
         # define the next state
@@ -263,31 +246,37 @@ class CombinationGame(gym.Env):
         # define the done flag
         done = False
         # check if the action is within the action space
-        if action < 4:
-            # if the action is within the action space, move the agent
-            next_state = self.move_agent(action)
-        elif action == 4:
-            # if the action is 4, stay in place
-            pass
-        elif action == 5:
-            # if the action is 5, pick up an object
-            next_state = self.pick_up_object()
-        elif action == 6:
-            # if the action is 6, place an object
-            next_state = self.place_object()
-        # check if the episode is over
+        for action in actions:
+            if action < 4:
+                # if the action is within the action space, move the agent
+                half_step = self.move_agents(action)
+            elif action == 4:
+                # if the action is 4, stay in place
+                pass
+            elif action == 5:
+                # if the action is 5, pick up an object
+                next_state = self.pick_up_object()
+            elif action == 6:
+                # if the action is 6, place an object
+                next_state = self.place_object()
+            # check if the episode is over
         if self.check_episode_over():
             # if the episode is over, set the done flag to true
             done = True
+        # transition through the progression tree
+        reward = self.check_progression()
         # return the next state, reward and done flag
         return next_state, reward, done
+
+    def pick_up_object(self, agent_id, grid):
+        
 
     def move_agent(self, action):
         """
             moves the agent in the environment
             inputs :
                 action : the action taken by the agent
-            outputs :
+      s      outputs :
                 next_state : the next state of the environment
         """
         # define the next state
@@ -370,16 +359,3 @@ class Entity:
 
     def __rep__(self):
         return self.entity_string_doc[self.object_type] + str(self.object_id)
-
-# test the random generation and render the environment
-if __name__ == "__main__":
-    # create an environment
-    env = CombinationGame(1)
-    
-
-    # reset and render the environment for 1 to 10 objects
-    for i in range(1,10):
-        # reset the environment
-        env.reset(i)
-        # render the environment
-        print(env.render())
