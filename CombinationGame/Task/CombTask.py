@@ -2,7 +2,7 @@
 import gym 
 import torch
 import numpy as np
-
+from ProgressionTree import ProgressionTree
 # define custom environment class from gym
 class CombinationGame(gym.Env):
     def __init__(self, number_of_agents, grid_size=10, max_obj_per_type=5):
@@ -18,7 +18,9 @@ class CombinationGame(gym.Env):
         self.entity_list = []
         # define the grid as an empty np.array of size 10x10x(4+max_obj_per_type)
         self.grid = np.zeros((self.grid_size, self.grid_size, 7+max_obj_per_type))
+        self.grid_indices = np.zeros((self.grid_size, self.grid_size))
         self._object_counter = np.zeros(7+self.max_obj_per_type, dtype=int)
+        tree = ProgressionTree()
         self.entity_string_doc = {
             0: "m+", # held movable object
             1: "m-", # movable object
@@ -55,8 +57,10 @@ class CombinationGame(gym.Env):
             "i-": (0, 0, 0),
             "X": (128, 128, 128),
         }
+        self.possible_combinations = {"g":["ii", "lm", "mm", "ml"], "i": ["ii", "lm", "mm", "ml"], "l":["mm"], "m":["mm", "ml", "lm"]}
 
-    
+        self.tree = ProgressionTree()
+        self.goal_state_vector = np.ones(7+self.max_obj_per_type+1)
     def _get_object_string_from_vector(self, vector):
         """
             gets the object string representation from a vector
@@ -67,6 +71,9 @@ class CombinationGame(gym.Env):
         """
         # define the object string
         object_string = ""
+        # if vector is all ones object represent te goal state
+        if np.all(vector):
+            return "g"
         # if vector is all zeros object_string is "  "
         if np.any(vector):
             entity_type = self.entity_string_doc[np.argmax(vector[0:7])]
@@ -84,6 +91,9 @@ class CombinationGame(gym.Env):
             outputs :
                 vector : the vector representation of the object, of size 7+max_obj_per_type which includes the object type and number
         """
+        # if object is goal state then return a vector with all ones
+        if object_string == "g":
+            return np.ones(7+self.max_obj_per_type+1)
         # define the vector
         vector = np.zeros(7+self.max_obj_per_type+1)
 
@@ -93,9 +103,82 @@ class CombinationGame(gym.Env):
         # set the obeject type
         vector[object_type] = 1
         # set the object id
-        vector[7+object_id] = 1
+        print(object_id)
+        vector[7+object_id-1] = 1
         return vector
+    def get_branching_ps_from_diff(self, difficulty):
+        return [1, 1, 0.5, 0.5]
+    def initialize_progression_tree(self, difficulty):
+        branching_probabilities = self.get_branching_ps_from_diff( difficulty)
+        self.tree.generate_tree(branching_probabilities)
+        self.tree.set_node_ids()
+        children_is_leaf_mask = self.tree._leaf_node_mask()
+        object_counter = np.zeros(7+self.max_obj_per_type, dtype=int)
+        for depth in range(self.tree.get_max_depth()):
+            print("depth: ", depth, "nodes: ", self.tree.get_nodes_by_depth(depth))
+            for node in self.tree.get_nodes_by_depth(depth):
+                if node.parent is None:
+                    node.value = self.goal_state_vector
+                if self.tree._is_node_leaf(node):
+                    continue
+                node_type = self._get_object_string_from_vector(node.value)[0]
+                combs = list(np.copy(self.possible_combinations[node_type]))
+                if children_is_leaf_mask[node.id]: 
+                    combs = [comb for comb in combs if comb!="ii"]
+                print(node_type, combs, children_is_leaf_mask[node.id])
+                comb = np.random.choice(combs)
+                found_comb=False
+                while not found_comb:
+                    for obj in comb:                        
+                        if obj == "m" or obj=="i":
+                            obj += "-"
+                        if object_counter[self.entity_string_doc_reverse[obj]] >= self.max_obj_per_type:
+                            combs.remove(comb)
+                            if len(combs)==0:
+                                # prune the tree if too large
+                                node.children = None
+                                found_comb=True
+                                break
+                            comb = np.random.choice(combs)
+                            break
+                        else: 
+                            found_comb = True
+                            
+                if self.tree._is_node_leaf(node):
+                    continue
+                print("not suppose to be printed") if node.children is None else print("node children: ", node.children)
+                cobj = ["", ""]
+                for i, obj in enumerate(comb): 
+                    cobj[i]= obj
+                    
+                    if obj == "m" or obj=="i":
+                        cobj[i] += "-"
+                    object_type = self.entity_string_doc_reverse[cobj[i]]
+                    # decide whether to reuse landmark or not
+                    if comb == "l":
+                        reuse = np.random.randint(1, object_counter[object_type]+2)
+                        if reuse < object_counter[object_type]:
+                            cobj[i] += str(reuse)
+                        else:
+                            cobj[i] += str(object_counter[object_type]+1)
+                            object_counter[object_type] += 1
+                    else: 
+                        cobj[i] += str(object_counter[object_type]+1)
+                        object_counter[object_type] += 
+                    node.children[i].value = self._get_object_vector_from_string(cobj[i])
 
+    def _get_object_type_and_id_from_string(self, object_string):
+        """
+            Returns the object type and id from the object string
+            inputs :   
+                object_string : the object string representation
+            outputs :
+                object_type : the object type
+                object_id : the object id
+        """
+        object_type = self.entity_string_doc_reverse[object_string[0:2]] if len(object_string) > 2 else self.entity_string_doc_reverse[object_string[0]]
+        object_id = int(object_string[2:]) if len(object_string) > 2 else int(object_string[1])
+        return object_type, object_id
     def initialize_entity_list(self, entity_list):
         """
             initializes the entity list
@@ -165,15 +248,29 @@ class CombinationGame(gym.Env):
             if object_type == 4 or object_type == 5:
                 # choose a random position from the unoccupied indices list and make sure it is on the border
                 object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                i = 0
                 while object_pos_x == 0 or object_pos_x == self.grid_size-1 or object_pos_y == 0 or object_pos_y == self.grid_size-1:
                     object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                    i+=1
+                    if i>50:
+                        print("could not place object")
+                        break
                 # remove the chosen position as well as the neighboring grid cells from the unoccupied indices list
                 indices = self._remove_position_and_neighbors((object_pos_x, object_pos_y), indices)
 
             # if object is not a wall
             elif object_type != 6:
+                
                 # choose a random position from the unoccupied indices list
                 object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                # while loop to make sure position is not on the bottom row meaning that object_pos_x is not 0
+                i = 0
+                while object_pos_x == self.grid_size-1:
+                    object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                    i+=1
+                    if i>50:
+                        print("could not place object")
+                        break
                 # remove the chosen position as well as the neighboring grid cells from the unoccupied indices list
                 indices = self._remove_position_and_neighbors((object_pos_x, object_pos_y), indices)
             # if object is a wall
@@ -194,7 +291,68 @@ class CombinationGame(gym.Env):
             # add the entity to the entity list
             entity_list.append(entity)
         return entity_list
+    def _generate_entity_list_from_tree(self):
+        """
+            Goes thorugh the progression tree and generates the entity list based on the node objects
+        """
+        nodes_strings_distinct = list(set([self._get_object_string_from_vector(node.value) for node in self.tree.get_leaves()]))
+        entity_list = []
+        # initiate list of unoccupied indices
+        indices = np.array(np.unravel_index(range(self.grid_size*self.grid_size), (self.grid_size, self.grid_size))).T
+        print(f"{nodes_strings_distinct=}")
+        for string_obj in nodes_strings_distinct:
+            object_type_string, object_id = self._get_object_type_and_id_from_string(string_obj)
+            object_type = self.entity_string_doc[object_type_string]
+            if len(indices) == 0:
+                print(f"no more room to place objects, only {i} objects have been placed")
+                break
+            # if object is an indicator
+            if object_type == 4 or object_type == 5:
+                # choose a random position from the unoccupied indices list and make sure it is on the border
+                object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                i = 0
+                while object_pos_x == 0 or object_pos_x == self.grid_size-1 or object_pos_y == 0 or object_pos_y == self.grid_size-1:
+                    object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                    i+=1
+                    if i>50:
+                        print("could not place object")
+                        break
+                # remove the chosen position as well as the neighboring grid cells from the unoccupied indices list
+                indices = self._remove_position_and_neighbors((object_pos_x, object_pos_y), indices)
 
+            # if object is not a wall
+            elif object_type != 6:
+                
+                # choose a random position from the unoccupied indices list
+                object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                # while loop to make sure position is not on the bottom row meaning that object_pos_x is not 0
+                i = 0
+                while object_pos_x == self.grid_size-1:
+                    object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+                    i+=1
+                    if i>50:
+                        print("could not place object")
+                        break
+                # remove the chosen position as well as the neighboring grid cells from the unoccupied indices list
+                indices = self._remove_position_and_neighbors((object_pos_x, object_pos_y), indices)
+            # if object is a wall
+            else:
+                pass # no walls yet
+            # create the entity
+            entity = Entity(object_type, (object_pos_x, object_pos_y), object_id)
+            # add the entity to the entity list
+            entity_list.append(entity)
+        # place one or two agents, depending on the self.number_of_agent parameter
+        for i in range(self.number_of_agents):
+            # choose a random position from the unoccupied indices list
+            object_pos_x, object_pos_y = indices[np.random.randint(0, len(indices))]
+            # remove agent's position from the indices list
+            self._delete_position(indices, (object_pos_x, object_pos_y))
+            # create the entity
+            entity = Entity(2, (object_pos_x, object_pos_y), i+1)
+            # add the entity to the entity list
+            entity_list.append(entity)
+        return entity_list
     def place_entity_list_in_grid(self):
         """
             place each entity in the environment with the corresponding object string representation
@@ -202,7 +360,7 @@ class CombinationGame(gym.Env):
             outputs : None
         """
         # iterate over the entity list
-        for entity in self.entity_list:
+        for index, entity in enumerate(self.entity_list):
             # get object position
             object_pos_x = entity.get_object_pos_x()
             object_pos_y = entity.get_object_pos_y()            
@@ -210,6 +368,7 @@ class CombinationGame(gym.Env):
             object_vector = self._get_object_vector_from_string(str(entity))
             
             self.grid[object_pos_x][object_pos_y] = object_vector
+            self.grid_indices[object_pos_x][object_pos_y] = index
 
     def reset(self, total_number_of_objects=3):
         """
@@ -230,74 +389,169 @@ class CombinationGame(gym.Env):
         
 
     def step(self, actions):
-        """
-            takes an action in the environment, returns the next state and reward. Actions 0-3 are for moving the agent. Action 4 staying in place. Action 5 and 6 are for picking up and placing objects respectively.
-            inputs :
-                action s: the action taken by the agents
-            outputs :
-                next_state : the next state of the environment
-                reward : the reward received by the agents
-                done : boolean indicating whether the episode is over
-        """
-        # define the next state
-        next_state = self.state
-        # define the reward
-        reward = 0
-        # define the done flag
-        done = False
-        # check if the action is within the action space
-        for action in actions:
-            if action < 4:
-                # if the action is within the action space, move the agent
-                half_step = self.move_agents(action)
-            elif action == 4:
-                # if the action is 4, stay in place
-                pass
-            elif action == 5:
-                # if the action is 5, pick up an object
-                next_state = self.pick_up_object()
-            elif action == 6:
-                # if the action is 6, place an object
-                next_state = self.place_object()
-            # check if the episode is over
-        if self.check_episode_over():
-            # if the episode is over, set the done flag to true
-            done = True
-        # transition through the progression tree
-        reward = self.check_progression()
-        # return the next state, reward and done flag
-        return next_state, reward, done
-
-    def pick_up_object(self, agent_id, grid):
+        pass
         
 
-    def move_agent(self, action):
+    def pick_up_object(self, agent_id):
+        """
+            pick up an object, modify the entity list and the grid
+            inputs :
+                agent_id : the id of the agent
+            outputs :
+                None
+        """
+        # get the agent's position
+        agent_pos_x, agent_pos_y = self.get_agent_pos(agent_id)
+
+        # check if the object on the above grid cell is movable
+        object_above_string = self._get_object_string_from_vector(self.grid[agent_pos_x-1][agent_pos_y])
+        if object_above_string[:2] == 'm-':
+            # if movable, change object to held and assign it to the agent
+            self.grid[agent_pos_x-1][agent_pos_y] = self._get_object_vector_from_string('m+'+object_above_string[2:])
+            self.assign_object_to_agent((agent_pos_x, agent_pos_y), self.grid_indices[agent_pos_x-1][agent_pos_y])
+            # modify entity_list
+            self.entity_list[self.grid_indices[agent_pos_x-1][agent_pos_y]].object_type = 0
+    
+    def assign_object_to_agent(self, agent_pos, object_index):
+        """
+            assign an object to an agent in the entity_list
+            inputs :
+                agent_pos : the postion of the agent in the grid
+                object_index : the index of the object in the entity_list
+            outputs :
+                None
+        """
+        # get the agent's entity_list index
+        agent_index = self.grid_indices[agent_pos[0], agent_pos[1]]
+        self.entity_list[agent_index].assign_object(object_index)
+    def unassign_object_from_agent(self, agent_pos):
+        """
+            unassign an object from an agent in the entity_list
+            inputs :
+                agent_id : the id of the agent
+            outputs :
+                None
+        """
+        agent_index = self.grid_indices[agent_pos[0], agent_pos[1]]
+        self.entity_list[agent_index].assign_object(None)
+    def place_object(self, agent_id):
+        """
+            place an object, modify the entity list and the grid
+            inputs :
+                agent_id : the id of the agent
+            outputs :
+                None
+        """
+        # get the agent's position
+        agent_pos_x, agent_pos_y = self.get_agent_pos(agent_id)
+        # check if the above grid cell on is empty
+        if self.grid_indices[agent_pos_x-1][agent_pos_y] is None:
+            # get the held object's entity_list index by looking at the agent's assigned_object_id
+            object_index = self.entity_list[self.grid_indices[agent_pos_x][agent_pos_y]].get_assigned_object_id()
+            # get the entity object from the entity list
+            pickup_position = self.entity_list[object_index].get_object_pos()
+            # remove the object from it's pick up location
+            self.grid[pickup_position[0]][pickup_position[1]] = np.zeros(7+self.max_obj_per_type+1)
+            self.grid_indices[pickup_position[0]][pickup_position[1]] = None
+            # if empty, place the object on the grid
+            self.grid[agent_pos_x-1][agent_pos_y] = self._get_object_vector_from_string('m-'+self.entity_list[object_index].get_object_id())
+            self.grid_indices[agent_pos_x-1][agent_pos_y] = object_index
+            # modify entity_list
+            self.entity_list[object_index].object_type = 1
+            self.entity_list[object_index].object_pos = (agent_pos_x-1, agent_pos_y)
+            # remove the object from the agent
+            self.unassign_object_from_agent((agent_pos_x, agent_pos_y))
+
+    def get_agent_pos(self, agent_id):
+        """
+            get the agent's position
+            inputs :
+                agent_id : the id of the agent
+            outputs :
+                agent_pos_x : the x position of the agent
+                agent_pos_y : the y position of the agent
+        """
+        for entity in self.entity_list:
+            if entity.get_object_type() == 2 and entity.get_object_id() == agent_id:
+                agent_pos_x = entity.get_object_pos_x()
+                agent_pos_y = entity.get_object_pos_y()
+        return agent_pos_x, agent_pos_y
+    def move_agent(self, agent_id, action):
         """
             moves the agent in the environment
             inputs :
+                agent_id : the id of the agent
                 action : the action taken by the agent
-      s      outputs :
-                next_state : the next state of the environment
+            outputs :
+                None
         """
-        # define the next state
-        next_state = self.state
-        # get the agent position
-        agent_pos_x = next_state[0][0][0]
-        agent_pos_y = next_state[0][0][1]
-        # check if the agent is at the edge of the grid
-        if agent_pos_x == 0:
-            # if the agent is at the edge of the grid, move the agent to the right
-            next_state[0][0][0] = next_state[0][0][0] + 1
-        elif agent_pos_x == 9:
-            # if the agent is at the edge of the grid, move the agent to the left
-            next_state[0][0][0] = next_state[0][0][0] - 1
-        elif agent_pos_y == 0:
-            # if the agent is at the edge of the grid, move the agent down
-            next_state[0][0][1] = next_state[0][0][1] + 1
-        elif agent_pos_y == 9:
-            # if the agent is at the edge of the grid, move the agent up
-            next_state[0][0][1] = next_state[0][0][1] - 1
-        
+        # get the agent's position
+        agent_pos_x, agent_pos_y = self.get_agent_pos(agent_id)
+        # if action is 0, move up
+        if action == 0:
+            # check if the cell above is empty
+            if self.grid_indices[agent_pos_x-1][agent_pos_y] is None:
+                # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell up
+                self.grid[agent_pos_x-1][agent_pos_y] = self.grid[agent_pos_x][agent_pos_y]
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid_indices[agent_pos_x-1][agent_pos_y] = self.grid_indices[agent_pos_x][agent_pos_y]
+                self.grid_indices[agent_pos_x][agent_pos_y] = None
+                self.entity_list[self.grid_indices[agent_pos_x-1][agent_pos_y]].object_pos = (agent_pos_x-1, agent_pos_y)
+        # if action is 1, move right
+        elif action == 1:
+            # check if the cell to the right is empty
+            if self.grid_indices[agent_pos_x][agent_pos_y+1] is None:
+                # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell right
+                self.grid[agent_pos_x][agent_pos_y+1] = self.grid[agent_pos_x][agent_pos_y]
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid_indices[agent_pos_x][agent_pos_y+1] = self.grid_indices[agent_pos_x][agent_pos_y]
+                self.grid_indices[agent_pos_x][agent_pos_y] = None
+                self.entity_list[self.grid_indices[agent_pos_x][agent_pos_y+1]].object_pos = (agent_pos_x, agent_pos_y+1)
+        # if action is 2, move down
+        elif action == 2:
+            # check if the cell below is empty
+            if self.grid_indices[agent_pos_x+1][agent_pos_y] is None:
+                # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell down
+                self.grid[agent_pos_x+1][agent_pos_y] = self.grid[agent_pos_x][agent_pos_y]
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid_indices[agent_pos_x+1][agent_pos_y] = self.grid_indices[agent_pos_x][agent_pos_y]
+                self.grid_indices[agent_pos_x][agent_pos_y] = None
+                self.entity_list[self.grid_indices[agent_pos_x+1][agent_pos_y]].object_pos = (agent_pos_x+1, agent_pos_y)
+        # if action is 3, move left
+        elif action == 3:
+            # check if the cell to the left is empty
+            if self.grid_indices[agent_pos_x][agent_pos_y-1] is None:
+                # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell left
+                self.grid[agent_pos_x][agent_pos_y-1] = self.grid[agent_pos_x][agent_pos_y]
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid_indices[agent_pos_x][agent_pos_y-1] = self.grid_indices[agent_pos_x][agent_pos_y]
+                self.grid_indices[agent_pos_x][agent_pos_y] = None
+                self.entity_list[self.grid_indices[agent_pos_x][agent_pos_y-1]].object_pos = (agent_pos_x, agent_pos_y-1)
+        # if action is 4, do nothing
+        elif action == 4:
+            pass
+        # if action is 5, pick up an object
+        elif action == 5:
+            self.pick_up_object(agent_id)
+        # if action is 6, drop an object
+        elif action == 6:
+            self.place_object(agent_id)
+    
+    def _random_init(self, difficulty):
+        """
+            initializes the environment randomly
+            inputs :
+                difficulty : the difficulty of the environment
+            outputs :
+                None
+        """
+        # generate a tree
+        self.initialize_progression_tree(difficulty)
+        # get entity_list
+        self.entity_list = self._generate_entity_list_from_tree()
+        # place entity_list in the grid
+        self.place_entity_list_in_grid()
+
     def render(self):
         """
             renders the environment, returns string representing the current state
@@ -345,17 +599,37 @@ class Entity:
             5: "i-", # indicator off
             6: "X", # wall
         }
+        self.assigned_object_id = None
     
     def get_object_type(self):
         return self.object_type
+    def get_object_id(self):
+        return self.object_id
     def get_object_pos_x(self):
         return self.object_pos[0]
     def get_object_pos_y(self):
         return self.object_pos[1]
-
+    def assign_object(self, object_id):
+        self.assigned_object_id = object_id
+    def get_assigned_object_id(self):
+        return self.assigned_object_id
     # string representation of the object
     def __str__(self):
         return self.entity_string_doc[self.object_type] + str(self.object_id)
 
     def __rep__(self):
         return self.entity_string_doc[self.object_type] + str(self.object_id)
+
+
+"""
+TODO:
+    - change the task generation to start from a progression tree
+    - make the procedural progression tree procedure
+    - don't place all objects on the grid, only the ones that aren't the product of combinations
+    - when placing objects, add condition where you can place on an existing object if the combination is feasible according to the tree
+    - define the reward from progression tree transition and time_steps since start of task
+    - take care of object combinations according to the rules of the progression tree
+    - define the step function
+    - take care of how to handle half-steps and which agent goes first
+    - make an interface to try the environment which should include a render of the task and the progression tree
+"""
