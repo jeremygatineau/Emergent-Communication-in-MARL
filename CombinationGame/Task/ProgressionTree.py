@@ -141,7 +141,7 @@ class ProgressionTree(Tree):
                 if branching_probabilities[node.depth] > np.random.rand():
                     # generate the children nodes
                     children = []
-                    for i in range(1, 3):
+                    for i in [1, 2]:
                         child = Node(None, depth=node.depth + 1, parent=node)
                         children.append(child)
                     # set the children nodes
@@ -165,19 +165,53 @@ class ProgressionTree(Tree):
                     set_number_of_nodes_rec(child)
         set_number_of_nodes_rec(self.root)
 
-    def set_node_value(self, node_id, value):
+    def set_node_p(self, node_id, p, p_type):
         """
-            Sets the value of a node.
+            Sets a parameter of a node.
             Inputs:
                 node_id: the node id corresponding to the number of the node when traversing three from left to right
-                value: the value to set
+                p: the value of parameter to set
+                p_type: the type of parameter to set
             Outputs:
                 None
         """
         nodes = self.get_nodes()
         node = nodes[node_id]
-        node.value = value
+        p_type = p_type.lower()
+        if p_type == 'value':
+            node.value = p
+        elif p_type == 'parent':
+            node.parent = p
+        elif p_type == 'children':
+            node.children = p
+        elif p_type == 'depth':
+            node.depth = p
+        elif p_type == 'id':
+            node.id = p
     
+    def get_node_p(self, node_id, p_type):
+        """
+            Gets a parameter of a node.
+            Inputs:
+                node_id: the node id corresponding to the number of the node when traversing three from left to right
+                p_type: the type of parameter to get
+            Outputs:
+                parameter value
+        """
+        nodes = self.get_nodes()
+        node = nodes[node_id]
+        p_type = p_type.lower()
+        if p_type == 'value':
+            return node.value
+        elif p_type == 'parent':
+            return node.parent
+        elif p_type == 'children':
+            return node.children
+        elif p_type == 'depth':
+            return node.depth
+        elif p_type == 'id':
+            return node.id
+            
     def get_node_value(self, node_id):
         """
             Returns the value of a node.
@@ -213,7 +247,7 @@ class ProgressionTree(Tree):
         for i in range(len(nodes)):
             nodes[i].id = i
     def _is_node_leaf(self, node):
-        return node.children is None
+        return self.get_node_p(node.id, "children") is None
     def _leaf_node_mask(self):
         """
             Returns a mask of the leaf nodes over the node list.
@@ -290,4 +324,5 @@ if __name__ == "__main__":
     tree = tree.generate_tree([1, 1, 1, 0.5])
     # render the tree
     tree.set_node_ids_by_depth()
-    print(tree.render_tree(representation=lambda node: str(node.id)))
+    tree.set_node_value(2, 10)
+    print(tree.render_tree(representation=lambda node: str(node.value)))

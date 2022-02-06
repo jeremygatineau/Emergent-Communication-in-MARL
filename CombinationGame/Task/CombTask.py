@@ -6,7 +6,7 @@ from ProgressionTree import ProgressionTree
 # define custom environment class from gym
 class CombinationGame(gym.Env):
     def __init__(self, number_of_agents, grid_size=10, max_obj_per_type=5):
-        self.max_obj_per_type = max_obj_per_type
+        self.max_obj_per_type = max_obj_per_type 
         self.grid_size = grid_size
         self.number_of_agents = number_of_agents
         # define the action space, 7 possible actions
@@ -60,7 +60,7 @@ class CombinationGame(gym.Env):
         self.possible_combinations = {"g":["ii", "lm", "mm", "ml"], "i": ["ii", "lm", "mm", "ml"], "l":["mm"], "m":["mm", "ml", "lm"]}
 
         self.tree = ProgressionTree()
-        self.goal_state_vector = np.ones(7+self.max_obj_per_type+1)
+        self.goal_state_vector = np.ones(7+self.max_obj_per_type)
     def _get_object_string_from_vector(self, vector):
         """
             gets the object string representation from a vector
@@ -72,7 +72,7 @@ class CombinationGame(gym.Env):
         # define the object string
         object_string = ""
         # if vector is all ones object represent te goal state
-        if np.all(vector):
+        if np.all(vector==1):
             return "g"
         # if vector is all zeros object_string is "  "
         if np.any(vector):
@@ -93,9 +93,9 @@ class CombinationGame(gym.Env):
         """
         # if object is goal state then return a vector with all ones
         if object_string == "g":
-            return np.ones(7+self.max_obj_per_type+1)
+            return np.ones(7+self.max_obj_per_type)
         # define the vector
-        vector = np.zeros(7+self.max_obj_per_type+1)
+        vector = np.zeros(7+self.max_obj_per_type)
 
         # get the object type
         object_type = self.entity_string_doc_reverse[object_string[0:2]] if len(object_string) > 2 else self.entity_string_doc_reverse[object_string[0]]
@@ -116,37 +116,52 @@ class CombinationGame(gym.Env):
         object_counter = np.zeros(7+self.max_obj_per_type, dtype=int)
         for depth in range(self.tree.get_max_depth()):
             print("depth: ", depth, "nodes: ", self.tree.get_nodes_by_depth(depth))
+            print("depth nodes strings: ", list(map(lambda l: self._get_object_string_from_vector(l), map(lambda n: n.value, self.tree.get_nodes_by_depth(depth)))))
             for node in self.tree.get_nodes_by_depth(depth):
+                if node.value is None:
+                    continue
                 if node.parent is None:
-                    node.value = self.goal_state_vector
+                    self.tree.set_node_p(node.id, self.goal_state_vector, "value")
+                print("value: ", node.value, "id: ", node.id)
                 if self.tree._is_node_leaf(node):
                     continue
                 node_type = self._get_object_string_from_vector(node.value)[0]
                 combs = list(np.copy(self.possible_combinations[node_type]))
                 if children_is_leaf_mask[node.id]: 
                     combs = [comb for comb in combs if comb!="ii"]
-                print(node_type, combs, children_is_leaf_mask[node.id])
+                print("\tNode: ", node_type, " Possible Combinations: ",combs, " Is_Leaf? ", children_is_leaf_mask[node.id])
                 comb = np.random.choice(combs)
                 found_comb=False
+                potential_child_counter = np.copy(object_counter)
                 while not found_comb:
-                    for obj in comb:                        
+                    comb_tuple = [comb[0], comb[1]]
+                    for i, obj in enumerate(comb_tuple):                        
                         if obj == "m" or obj=="i":
-                            obj += "-"
-                        if object_counter[self.entity_string_doc_reverse[obj]] >= self.max_obj_per_type:
-                            combs.remove(comb)
-                            if len(combs)==0:
-                                # prune the tree if too large
-                                node.children = None
-                                found_comb=True
-                                break
-                            comb = np.random.choice(combs)
+                            comb_tuple[i] += "-"
+                    print("YOOOOOOO 1 ", object_counter, potential_child_counter)
+
+                    for i, obj in enumerate(comb_tuple): 
+                        potential_child_counter[self.entity_string_doc_reverse[obj]] += 1
+                    print("YOOOOOOO 2 ", object_counter, potential_child_counter)
+                    if np.all(potential_child_counter <= self.max_obj_per_type):
+                        print("\t\tFound Combination: ", comb_tuple)
+                        break
+                    else:
+                        print("\t\tCombination ", comb_tuple," doesn't work, trying again")
+                        combs.remove(comb)
+                        if len(combs)==0:
+                            print("\t\tNo more combinations, pruning node children")
+                            self.tree.set_node_p(node.id, None, "Children")
+                            print("This is supposed to be None: ", node.children)
                             break
-                        else: 
-                            found_comb = True
+                        comb = np.random.choice(combs)
+                        potential_child_counter = np.copy(object_counter)
+                    
+                    
                             
                 if self.tree._is_node_leaf(node):
                     continue
-                print("not suppose to be printed") if node.children is None else print("node children: ", node.children)
+                print("not suppose to be printed") if node.children is None else print("\tFound Combination: ", comb)
                 cobj = ["", ""]
                 for i, obj in enumerate(comb): 
                     cobj[i]= obj
@@ -155,7 +170,7 @@ class CombinationGame(gym.Env):
                         cobj[i] += "-"
                     object_type = self.entity_string_doc_reverse[cobj[i]]
                     # decide whether to reuse landmark or not
-                    if comb == "l":
+                    if obj == "l":
                         reuse = np.random.randint(1, object_counter[object_type]+2)
                         if reuse < object_counter[object_type]:
                             cobj[i] += str(reuse)
@@ -164,7 +179,7 @@ class CombinationGame(gym.Env):
                             object_counter[object_type] += 1
                     else: 
                         cobj[i] += str(object_counter[object_type]+1)
-                        object_counter[object_type] += 
+                        object_counter[object_type] += 1
                     node.children[i].value = self._get_object_vector_from_string(cobj[i])
 
     def _get_object_type_and_id_from_string(self, object_string):
@@ -301,8 +316,7 @@ class CombinationGame(gym.Env):
         indices = np.array(np.unravel_index(range(self.grid_size*self.grid_size), (self.grid_size, self.grid_size))).T
         print(f"{nodes_strings_distinct=}")
         for string_obj in nodes_strings_distinct:
-            object_type_string, object_id = self._get_object_type_and_id_from_string(string_obj)
-            object_type = self.entity_string_doc[object_type_string]
+            object_type, object_id = self._get_object_type_and_id_from_string(string_obj)
             if len(indices) == 0:
                 print(f"no more room to place objects, only {i} objects have been placed")
                 break
@@ -378,7 +392,7 @@ class CombinationGame(gym.Env):
                 state : the initial state of the environment
         """
         # reset the grid
-        self.grid = np.zeros((self.grid_size, self.grid_size, 7+self.max_obj_per_type+1))
+        self.grid = np.zeros((self.grid_size, self.grid_size, 7+self.max_obj_per_type))
         # generate entity list
         self.entity_list = self._generate_random_entity_list(total_number_of_objects)
         print([str(entity) for entity in self.entity_list])
@@ -451,7 +465,7 @@ class CombinationGame(gym.Env):
             # get the entity object from the entity list
             pickup_position = self.entity_list[object_index].get_object_pos()
             # remove the object from it's pick up location
-            self.grid[pickup_position[0]][pickup_position[1]] = np.zeros(7+self.max_obj_per_type+1)
+            self.grid[pickup_position[0]][pickup_position[1]] = np.zeros(7+self.max_obj_per_type)
             self.grid_indices[pickup_position[0]][pickup_position[1]] = None
             # if empty, place the object on the grid
             self.grid[agent_pos_x-1][agent_pos_y] = self._get_object_vector_from_string('m-'+self.entity_list[object_index].get_object_id())
@@ -493,7 +507,7 @@ class CombinationGame(gym.Env):
             if self.grid_indices[agent_pos_x-1][agent_pos_y] is None:
                 # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell up
                 self.grid[agent_pos_x-1][agent_pos_y] = self.grid[agent_pos_x][agent_pos_y]
-                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type)
                 self.grid_indices[agent_pos_x-1][agent_pos_y] = self.grid_indices[agent_pos_x][agent_pos_y]
                 self.grid_indices[agent_pos_x][agent_pos_y] = None
                 self.entity_list[self.grid_indices[agent_pos_x-1][agent_pos_y]].object_pos = (agent_pos_x-1, agent_pos_y)
@@ -503,7 +517,7 @@ class CombinationGame(gym.Env):
             if self.grid_indices[agent_pos_x][agent_pos_y+1] is None:
                 # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell right
                 self.grid[agent_pos_x][agent_pos_y+1] = self.grid[agent_pos_x][agent_pos_y]
-                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type)
                 self.grid_indices[agent_pos_x][agent_pos_y+1] = self.grid_indices[agent_pos_x][agent_pos_y]
                 self.grid_indices[agent_pos_x][agent_pos_y] = None
                 self.entity_list[self.grid_indices[agent_pos_x][agent_pos_y+1]].object_pos = (agent_pos_x, agent_pos_y+1)
@@ -513,7 +527,7 @@ class CombinationGame(gym.Env):
             if self.grid_indices[agent_pos_x+1][agent_pos_y] is None:
                 # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell down
                 self.grid[agent_pos_x+1][agent_pos_y] = self.grid[agent_pos_x][agent_pos_y]
-                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type)
                 self.grid_indices[agent_pos_x+1][agent_pos_y] = self.grid_indices[agent_pos_x][agent_pos_y]
                 self.grid_indices[agent_pos_x][agent_pos_y] = None
                 self.entity_list[self.grid_indices[agent_pos_x+1][agent_pos_y]].object_pos = (agent_pos_x+1, agent_pos_y)
@@ -523,7 +537,7 @@ class CombinationGame(gym.Env):
             if self.grid_indices[agent_pos_x][agent_pos_y-1] is None:
                 # change self.grid, self.grid_indices and self.entity_list so as to move the agent one cell left
                 self.grid[agent_pos_x][agent_pos_y-1] = self.grid[agent_pos_x][agent_pos_y]
-                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type+1)
+                self.grid[agent_pos_x][agent_pos_y] = np.zeros(7+self.max_obj_per_type)
                 self.grid_indices[agent_pos_x][agent_pos_y-1] = self.grid_indices[agent_pos_x][agent_pos_y]
                 self.grid_indices[agent_pos_x][agent_pos_y] = None
                 self.entity_list[self.grid_indices[agent_pos_x][agent_pos_y-1]].object_pos = (agent_pos_x, agent_pos_y-1)
