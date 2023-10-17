@@ -16,8 +16,8 @@ import matplotlib
 matplotlib.use('Agg')
 
 
-epochs = int(5e4)
-opt_params = {"lr":3e-4, "batch_size":40, \
+epochs = int(1e3)
+opt_params = {"lr":3e-3, "batch_size":128, \
               "gamma":0.99, "vocab_size":2, "training_loops":1, \
               "memory_size":20, "hidden_size": 30, "replay_size":120, \
               "eps":0.01, "cross_reward_coef":0.3, "grad_clamp":None}

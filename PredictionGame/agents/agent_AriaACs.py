@@ -8,15 +8,15 @@ from torch.autograd import Variable
 class AriaACs:
     def __init__(self,opt_params, with_memory=True, split=False, aidi=None):
         self.aidi = aidi
-        self.batch_size = opt_params["batch_size"]
-        self.gamma = opt_params["gamma"]
-        self.vocabulary_size = opt_params["vocab_size"]
-        self.memory_size = opt_params["memory_size"]
-        self.hidden_dim = opt_params["hidden_size"]
-        self.gc = opt_params["grad_clamp"]
-        self.replay_size = opt_params["replay_size"]
-        self.training_loops = opt_params["training_loops"]
-        self.clip_c = opt_params["clip_c"]
+        self.batch_size = opt_params.batch_size
+        self.gamma = opt_params.gamma
+        self.vocabulary_size = opt_params.vocab_size
+        self.memory_size = opt_params.memory_size
+        self.hidden_dim = opt_params.hidden_size
+        self.gc = opt_params.grad_clamp
+        self.replay_size = opt_params.replay_size
+        self.training_loops = opt_params.training_loops
+        self.clip_c = opt_params.clip_c
         self.split = split
         self.eps = np.finfo(np.float32).eps.item()
         self.with_memory = with_memory
@@ -37,8 +37,8 @@ class AriaACs:
         else:
             self.memoriesActor = None
 
-        self.optimizer = torch.optim.RMSprop(self.modT.parameters(), lr=opt_params["lr"])
-
+        self.optimizer = torch.optim.Adam(self.modT.parameters(), lr=opt_params["lr"])
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lambda epoch: max(0.5**(epoch//100), 0.04))
         self.saved_a = []
         self.saved_m = []
         self.saved_a_lp = []
@@ -48,7 +48,9 @@ class AriaACs:
         self.saved_downlink_msgs = []
         self.minibatch_counter = 0
         self.batch_counter = 0
-        
+
+        self.modI.eval()
+        self.modT.train()
     
 
     def select_action(self, obs, msg):
@@ -154,6 +156,7 @@ class AriaACs:
                 
                 if self.gc is not None:self.grad_clamp(self.modT.parameters(), self.gc)
                 self.optimizer.step()
+                self.scheduler.step()
             self.batch_counter+=1
             self.minibatch_counter = 0
             if self.batch_counter%1==0:
