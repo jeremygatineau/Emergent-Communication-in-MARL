@@ -101,7 +101,6 @@ while epoch<epochs:
         mu_ = np.zeros((2, opt_params["vocab_size"]))
         mu_[0, m0.item()] = 1
         mu_[1, m1.item()] = 1
-        # just need a, m, a_ps, m_ps
         
         predictions.append((a0.item(), a1.item()))
         (obs_, downlink_msgs_), r, done = Task.step([a0.item(), a1.item()], mu_)
