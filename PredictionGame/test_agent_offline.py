@@ -17,7 +17,7 @@ matplotlib.use('Agg')
 
 def train_function(opt_params):
     _log=True
-    epochs = int(5e3)
+    epochs = int(8e3)
     
 
     agent0 = AriaACs(opt_params=opt_params, split=True, with_memory=True, aidi=0)
@@ -112,8 +112,8 @@ def train_function(opt_params):
         downlink_msgs = downlink_msgs_
         if loss0 is not None:
             RMA_reward = RMA_reward*RMA_coef + (1-RMA_coef)*np.array([rs0.mean().item(), rs1.mean().item()])
-            RMA_streak = RMA_streak + 1 if _is_converged(RMA_reward) else 0
-            if RMA_streak>200: break
+            _is_converged_streak = _is_converged_streak + 1 if _is_converged(RMA_reward) else 0
+            if _is_converged_streak>200: pass
             if _log: wandb.log({"policy loss A0": loss0[0], "value loss A0": loss0[1], \
                     "entropy loss A0": loss0[2],"reward A0": rs0.mean().item(), \
                     "policy loss A1": loss1[0], "value loss A1": loss1[1], \
@@ -132,11 +132,11 @@ def train_function(opt_params):
     return epoch
 # set up a sweep with wandb
 def main():
-    opt_params = {"lr":8e-3, "batch_size":16, \
+    opt_params = {"lr":8e-3, "batch_size":32, \
                 "gamma":0.99, "vocab_size":2, "training_loops":1, \
-                "memory_size":20, "hidden_size": 30, "replay_size":16, \
+                "memory_size":20, "hidden_size": 30, "replay_size":32, \
                 "eps":0.01, "grad_clamp":None, \
-                "clip_c":0.006, "cross_reward_coef":0.3}
+                "clip_c":0.2, "cross_reward_coef":0.3}
     run = wandb.init(config=opt_params, project='EC-MARL TOY PB', entity='jjer125')
     epochs = train_function(wandb.config)
     score = 5000/epochs - 1 # 0 if not converged otherwise positive
@@ -153,6 +153,7 @@ if __name__=='__main__':
     wandb.login()
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='EC-MARL TOY PB', entity='jjer125')
     #main()
+
     wandb.agent(sweep_id, function=main, count=10)
 
 # %%
