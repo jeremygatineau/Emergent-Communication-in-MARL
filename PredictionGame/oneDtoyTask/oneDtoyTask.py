@@ -33,9 +33,6 @@ class ToyTask():
 
         return (observations, downlinkMsgs)
     def render(self):
-        """
-        plot obs state and a visualization of the communication channel
-        """
         fig, axs= plt.subplots()
         axs.plot(self.hiddenStateField.fields)
         return fig, axs
